@@ -24,6 +24,8 @@ toml_edit = { version = "0.22", features = ["serde"] }
 tray-icon = "0.21"
 
 [target.'cfg(windows)'.dependencies]
+# Small settings popup (a borderless WebView2 window) above the tray icon.
+wry = "0.53"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Com",
@@ -36,6 +38,10 @@ windows = { version = "0.58", features = [
 
 [dev-dependencies]
 filetime = "0.2"
+
+# Embeds assets/icon.ico into craftpulse.exe (see build.rs).
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 lto = true
