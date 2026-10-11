@@ -90,9 +90,7 @@ fn run_rpc(receiver: Receiver<Command>) {
                     .assets(
                         Assets::new()
                             .large_image(&card.large_image_key)
-                            .large_text(&card.app_name)
-                            .small_image(&card.small_image_key)
-                            .small_text("ArtCraft"),
+                            .large_text(&card.app_name),
                     );
                 let ok = client
                     .as_mut()
