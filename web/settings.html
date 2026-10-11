@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CraftPulse settings</title>
+  <style>
+    :root{color-scheme:dark;--bg:#111318;--panel:#191c23;--panel2:#20242d;--line:#303642;--text:#f0f1f4;--muted:#9ba3b2;--orange:#f58138;--green:#65d6a2}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 18% -10%,#3b251d 0,transparent 36%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+    main{width:min(1020px,calc(100% - 36px));margin:42px auto 80px}.brand{display:flex;align-items:center;gap:12px}.mark{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#ffad69,#ed6329);color:#1d1714;display:grid;place-items:center;font-weight:900;font-size:20px}.eyebrow{color:var(--orange);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}h1{font-size:25px;margin:1px 0 0;letter-spacing:-.03em}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.status{color:var(--green);font-size:13px}.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.panel{background:linear-gradient(150deg,#1d2028,#171a20);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 18px 48px #0002}.panel h2{font-size:16px;margin:0 0 6px}.sub{font-size:13px;color:var(--muted);margin:0 0 20px}.field{padding:16px 0;border-top:1px solid #ffffff0d;display:flex;justify-content:space-between;gap:16px;align-items:center}.field:first-of-type{border-top:0}.field strong{display:block;font-size:14px}.field small{display:block;color:var(--muted);margin-top:2px}.switch{appearance:none;width:43px;height:25px;background:#414652;border-radius:20px;position:relative;cursor:pointer;flex:none;transition:.2s}.switch:checked{background:var(--orange)}.switch:before{content:"";position:absolute;width:19px;height:19px;left:3px;top:3px;border-radius:50%;background:white;transition:.2s}.switch:checked:before{transform:translateX(18px)}input[type=text],textarea{display:block;width:100%;background:#12151a;border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--text);font:inherit;outline:none}input:focus,textarea:focus{border-color:var(--orange)}textarea{min-height:80px;resize:vertical}.app-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #ffffff0d}.app-icon{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:#292d37;color:#ffab72;font-weight:800}.app-row span{flex:1}.app-row small{display:block;color:var(--muted)}.preview{margin-top:18px;background:#252a33;border:1px solid #414753;border-radius:12px;padding:15px;display:flex;gap:12px}.orb{width:50px;height:50px;border-radius:14px;background:linear-gradient(145deg,#ffae69,#e76731);display:grid;place-items:center;color:#231710;font-weight:900}.preview strong{display:block}.preview p{margin:3px 0;color:#b9c0cc;font-size:13px}.label{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:19px 0 7px}.action{display:flex;gap:8px}.action input{flex:1}.button{background:var(--orange);border:0;border-radius:10px;padding:10px 15px;color:#211710;font-weight:800;cursor:pointer}.button.secondary{background:#303641;color:var(--text)}.footer{display:flex;align-items:center;gap:12px;margin-top:18px}.message{font-size:13px;color:var(--muted)}pre{white-space:pre-wrap;overflow:auto;background:#111419;border:1px solid var(--line);border-radius:10px;padding:12px;color:#bfc6d1;font:12px/1.6 ui-monospace,monospace;max-height:190px}.wide{grid-column:1/-1}.pill{font-size:11px;color:var(--green);background:#1c332b;padding:4px 8px;border-radius:30px}.hidden{display:none!important}@media(max-width:720px){.layout{grid-template-columns:1fr}header{align-items:flex-start;gap:12px;flex-direction:column}.wide{grid-column:auto}}
+    .app-row{display:grid;grid-template-columns:30px minmax(95px,1fr) 115px minmax(105px,1fr) 43px;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #ffffff0d}.app-icon{flex:none}.app-row strong{display:block;font-size:13px}.app-row small{font-size:11px}.app-hide,.app-action{min-width:0;width:100%;background:#12151a;border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--text);font:12px inherit}.app-hide{cursor:pointer}.app-action::placeholder{color:#828b99}
+    @media(max-width:720px){.app-row{grid-template-columns:30px 1fr 43px}.app-hide,.app-action{grid-column:2/4}.app-row .switch{grid-column:3;grid-row:1}}
+  </style>
+</head>
+<body>
+<main>
+  <header><div class="brand"><div class="mark">C</div><div><div class="eyebrow">ArtCraft companion</div><h1>CraftPulse</h1></div></div><div class="status" id="status">● Connected locally</div></header>
+  <div class="layout">
+    <section class="panel">
+      <h2>Presence settings</h2><p class="sub">Control what Discord shares while you create.</p>
+      <label class="field"><span><strong>Enable Rich Presence</strong><small>Pause all CraftPulse activity</small></span><input class="switch" id="enabled" type="checkbox"></label>
+      <label class="field"><span><strong>Hide project names</strong><small>Show “Private project” in place of document names</small></span><input class="switch" id="hide" type="checkbox"></label>
+      <label class="field"><span><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
+      <div class="label">Default activity</div><input type="text" id="action" maxlength="100" placeholder="Creating">
+      <div class="label">Hide names matching these regular expressions</div><textarea id="patterns" placeholder="One pattern per line, e.g. confidential|client-name"></textarea>
+      <div class="footer"><button class="button" id="save">Save changes</button><span class="message" id="message"></span></div>
+    </section>
+    <section class="panel">
+      <h2>Live card preview</h2><p class="sub">A preview of how your activity appears in Discord.</p>
+      <div class="preview"><div class="orb">P</div><div><strong id="preview-title">Poster concept</strong><p id="preview-state">in PhotoCraft — Editing</p></div></div>
+      <div class="label">Test an activity</div><div class="action"><input type="text" id="test-action" value="Exporting" maxlength="100"><button class="button secondary" id="test">Preview</button></div>
+      <div class="label">Per-app overrides</div><div id="apps"></div>
+    </section>
+    <section class="panel wide">
+      <div style="display:flex;justify-content:space-between;align-items:center"><div><h2>Diagnostics & activity log</h2><p class="sub">Local status information for troubleshooting.</p></div><button class="button secondary" id="refresh">Refresh</button></div>
+      <div class="label">System</div><pre id="diagnostics">Loading…</pre><div class="label">Recent events</div><pre id="log">Loading…</pre>
+    </section>
+  </div>
+</main>
+<script>
+const token=new URLSearchParams(location.search).get("token")||"";
+const headers={"Content-Type":"application/json","X-CraftPulse-Token":token};
+const $=id=>document.getElementById(id);
+let config={};
+async function call(path,options={}){const response=await fetch(path,{...options,headers:{...headers,...options.headers}});if(!response.ok)throw new Error(await response.text());return response.json()}
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
+function drawApps(){
+  const entries=Object.entries(config.apps||{});
+  $("apps").innerHTML=entries.map(([name,app])=>{
+    const safeName=escapeHtml(name);
+    const safeInitial=escapeHtml(name[0]||"A");
+    return `<div class="app-row"><div class="app-icon">${safeInitial}</div><div><strong>${safeName}</strong><small>ArtCraft application</small></div><select class="app-hide" aria-label="Privacy for ${safeName}" data-app="${safeName}"><option value="inherit" ${app.hide_project_name==null?"selected":""}>Privacy: inherit</option><option value="hidden" ${app.hide_project_name===true?"selected":""}>Always hide</option><option value="visible" ${app.hide_project_name===false?"selected":""}>Show name</option></select><input class="app-action" aria-label="Activity for ${safeName}" data-app="${safeName}" type="text" maxlength="100" value="${escapeHtml(app.action||"")}" placeholder="Default: ${escapeHtml(config.action)}"><input class="switch app-switch" aria-label="Enable ${safeName}" data-app="${safeName}" type="checkbox" ${app.enabled?"checked":""}></div>`;
+  }).join("");
+  document.querySelectorAll(".app-switch").forEach(node=>node.addEventListener("change",e=>{config.apps[e.target.dataset.app].enabled=e.target.checked;save()}));
+  document.querySelectorAll(".app-hide").forEach(node=>node.addEventListener("change",e=>{const app=config.apps[e.target.dataset.app];app.hide_project_name=e.target.value==="inherit"?null:e.target.value==="hidden";save()}));
+  document.querySelectorAll(".app-action").forEach(node=>node.addEventListener("change",e=>{const value=e.target.value.trim();config.apps[e.target.dataset.app].action=value||null;save()}));
+}
+async function load(){config=await call("/api/settings");$("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;$("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");drawApps();await refresh();}
+async function save(){config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;config.action=$("action").value;config.hide_patterns=$("patterns").value.split("\n").map(x=>x.trim()).filter(Boolean);try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";$("status").textContent="● Settings saved";setTimeout(()=>$("message").textContent="",1800)}catch(err){$("message").textContent=err.message;$("status").textContent="● Could not save"}}
+async function refresh(){try{$("diagnostics").textContent=JSON.stringify(await call("/api/diagnostics"),null,2);$("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet."}catch(err){$("diagnostics").textContent=err.message}}
+$("save").onclick=save;$("refresh").onclick=refresh;
+$("test").onclick=async()=>{const result=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});$("preview-title").textContent=result.document;$("preview-state").textContent=result.state};
+load().catch(error=>{$("status").textContent="● Local connection error";$("diagnostics").textContent=error.message});
+</script>
+</body>
+</html>
