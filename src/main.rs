@@ -3,6 +3,7 @@
 mod config;
 mod detection;
 mod hints;
+mod popup;
 mod presence;
 mod privacy;
 mod rate_limit;
