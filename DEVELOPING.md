@@ -31,9 +31,9 @@ Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they
 
 1. Reload `config.toml` if it changed on disk.
 2. `ProcessDetector::detect` finds the Craft app to show, its project name and any detected activity.
-3. Read an optional hint file for that app.
+3. Read the app's live state from the control channel (`ControlHub`), then an optional hint file. Live state wins over window guessing.
 4. `privacy::make_card` builds the Discord card and applies the hiding rules.
-5. If the card changed, send it to Discord through the rate limiter. Otherwise refresh it every 30 seconds.
+5. If the card changed, send it to Discord through the rate limiter. Otherwise resend it every 10 seconds, which also restores it after Discord is refreshed. While Discord is unreachable, retry every 3 seconds without giving up.
 
 ### Threads
 
@@ -41,6 +41,7 @@ Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they
 | --- | --- |
 | Main | The polling loop above |
 | `craftpulse-discord-rpc` | Owns the Discord IPC connection. Requests time out after 4 seconds, and the worker is recreated if it hangs |
+| `craftpulse-control` | Reads the chosen app's state over its control channel, so a slow app can't stall the main loop |
 | `craftpulse-settings` | Local HTTP server for the settings page |
 | `craftpulse-tray` | Tray icon and menu (a `tao` event loop, created with `with_any_thread(true)` on Windows) |
 
@@ -49,6 +50,8 @@ Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they
 | File | Purpose |
 | --- | --- |
 | `src/main.rs` | Main loop, retry and timing logic, default activity per app |
+| `src/control.rs` | Live detection: talks to each app's JSON-lines control channel (read-only), maps tools, dialogs and documents to activity text, and powers the settings page's live status |
+| `src/notify.rs` | Windows toast notifications (restart reminder) |
 | `src/detection.rs` | App, window title, dialog and UI Automation detection |
 | `src/config.rs` | `config.toml` structs, loading, comment-preserving saving, live reload |
 | `src/privacy.rs` | Builds `PresenceCard`, applies hide settings and regex patterns |
@@ -148,3 +151,21 @@ Don't commit `target/` or your own `config.toml`.
 - Run `cargo fmt`, `cargo clippy` and `cargo test`.
 - Say which Craft app and version you tested against, since detection depends on each app's UI.
 - Bug reports are welcome as [issues](https://github.com/egsk4/CraftPulse/issues).
+
+## Live detection (control channel)
+
+Each Craft app can open a loopback JSON-lines control channel. CraftPulse reads it with only read-only queries (`ui.inspect`, `ui.state`, and `engine.execute` with `photo.inspect` / `project.inspect`). The protocol comes from each app's own `docs/control-protocol.md`.
+
+| App | Port (default) | Auth | How it is turned on |
+| --- | --- | --- | --- |
+| LightCraft | 7980 | none | `LIGHTCRAFT_CONTROL_PORT` or `--control` |
+| VectorCraft | 7979 | none | `VECTORCRAFT_CONTROL_PORT` |
+| DesignCraft | 7981 | none | `DESIGNCRAFT_CONTROL_PORT` |
+| FilmCraft | 9876 | none | `FILMCRAFT_CONTROL_PORT` |
+| EffectCraft | 9877 | none | `EFFECTCRAFT_CONTROL_PORT` |
+| PhotoCraft | 7878 | bearer token file | `PHOTOCRAFT_CONTROL_PORT` + `PHOTOCRAFT_CONTROL_TOKEN_FILE` |
+| PdfCraft | random | token in a JSON file | `pdfcraft --control <file>` only |
+
+The settings page's **Turn on live detection** button (and the first-run prompt) sets these variables with `setx` on Windows. Apps read them at launch, so they must be restarted once. `ControlHub::needs_restart` detects an app that is running but unreachable and triggers the reminder.
+
+Reply shapes differ per app, so `state_from_inspect` in `control.rs` matches fields loosely. The activity log prints each app's `ui.inspect` field names on first connect, which is the fastest way to fix a wrong mapping. Cloning an app's repo and reading its `crates/ui-egui/src/control.rs` `inspect` function shows the exact fields.
