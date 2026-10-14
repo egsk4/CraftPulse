@@ -65,38 +65,47 @@ impl RpcWorker {
     }
 }
 
+/// Opens a fresh connection to the Discord desktop app, if it is running.
+fn connect() -> Option<DiscordIpcClient> {
+    let mut client = DiscordIpcClient::new(APPLICATION_ID).ok()?;
+    client.connect().ok()?;
+    Some(client)
+}
+
 fn run_rpc(receiver: Receiver<Command>) {
     let mut client: Option<DiscordIpcClient> = None;
     while let Ok(command) = receiver.recv() {
         match command {
             Command::Set(card, response) => {
-                if client.is_none() {
-                    let mut next = match DiscordIpcClient::new(APPLICATION_ID) {
-                        Ok(client) => client,
-                        Err(_) => {
-                            let _ = response.send(false);
-                            continue;
-                        }
-                    };
-                    if next.connect().is_err() {
-                        let _ = response.send(false);
-                        continue;
-                    }
-                    client = Some(next);
-                }
-                let activity = Activity::new()
-                    .details(&card.document)
-                    .state(&card.state)
-                    .assets(
-                        Assets::new()
-                            .large_image(&card.large_image_key)
-                            .large_text(&card.app_name),
-                    );
-                let ok = client
+                let activity = || {
+                    Activity::new()
+                        .details(&card.document)
+                        .state(&card.state)
+                        .assets(
+                            Assets::new()
+                                .large_image(&card.large_image_key)
+                                .large_text(&card.app_name)
+                                .small_image(&card.small_image_key),
+                        )
+                };
+                // A refreshed or restarted Discord leaves us holding a dead
+                // pipe. Try the existing connection first, then reconnect once.
+                let mut ok = client
                     .as_mut()
-                    .is_some_and(|rpc| rpc.set_activity(activity).is_ok());
+                    .is_some_and(|rpc| rpc.set_activity(activity()).is_ok());
                 if !ok {
-                    client = None;
+                    if let Some(mut dead) = client.take() {
+                        let _ = dead.close();
+                    }
+                    if let Some(fresh) = connect() {
+                        client = Some(fresh);
+                        ok = client
+                            .as_mut()
+                            .is_some_and(|rpc| rpc.set_activity(activity()).is_ok());
+                        if !ok {
+                            client = None;
+                        }
+                    }
                 }
                 let _ = response.send(ok);
             }

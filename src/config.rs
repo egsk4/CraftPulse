@@ -19,6 +19,8 @@ pub struct Config {
     pub action: String,
     pub application_id: String,
     pub launch_at_login: bool,
+    /// The first-run question about live detection has been answered.
+    pub live_prompted: bool,
     pub apps: BTreeMap<String, AppConfig>,
     pub rules: Vec<ActivityRule>,
     #[serde(skip)]
@@ -41,6 +43,12 @@ pub struct AppConfig {
     pub hide_project_name: Option<bool>,
     pub action: Option<String>,
     pub large_image_key: Option<String>,
+    /// Read the app's own state over its JSON control channel (see control.rs).
+    pub live: bool,
+    /// Port the app's control channel listens on. Default: see `default_control_port`.
+    pub control_port: Option<u16>,
+    /// Token file shared with the app. Default: `control/<app>.token` next to config.toml.
+    pub control_token_file: Option<String>,
 }
 
 impl Default for Config {
@@ -72,6 +80,7 @@ impl Default for Config {
             action: "Creating".to_string(),
             application_id: "1558510318513033329".to_string(),
             launch_at_login: false,
+            live_prompted: false,
             apps,
             rules: Vec::new(),
             last_modified: None,
@@ -86,7 +95,25 @@ impl Default for AppConfig {
             hide_project_name: None,
             action: None,
             large_image_key: None,
+            live: true,
+            control_port: None,
+            control_token_file: None,
         }
+    }
+}
+
+/// Default control-channel port per app: the ports the apps' own docs use.
+/// (DesignCraft's docs also say 7979, which VectorCraft uses, so it gets 7981.)
+/// PdfCraft picks a random port itself; see `Config::control_token_file`.
+pub fn default_control_port(name: &str) -> u16 {
+    match name.to_ascii_lowercase().as_str() {
+        "photocraft" => 7878,
+        "vectorcraft" => 7979,
+        "lightcraft" => 7980,
+        "designcraft" => 7981,
+        "filmcraft" => 9876,
+        "effectcraft" => 9877,
+        _ => 0,
     }
 }
 
@@ -137,6 +164,37 @@ impl Config {
         }
     }
 
+    /// Folder holding the bearer-token files shared with the apps.
+    pub fn control_dir() -> PathBuf {
+        Self::path()
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("control")
+    }
+
+    pub fn control_port(&self, name: &str) -> u16 {
+        self.app_config(name)
+            .control_port
+            .unwrap_or_else(|| default_control_port(name))
+    }
+
+    /// PhotoCraft: the bearer-token file. PdfCraft: the control file the app
+    /// writes (`pdfcraft --control <file>`). Other apps need neither.
+    pub fn control_token_file(&self, name: &str) -> PathBuf {
+        self.app_config(name)
+            .control_token_file
+            .filter(|file| !file.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if name.eq_ignore_ascii_case("pdfcraft") {
+                    return dirs::home_dir()
+                        .unwrap_or_else(std::env::temp_dir)
+                        .join(".pdfcraft-control.json");
+                }
+                Self::control_dir().join(format!("{}.token", name.to_ascii_lowercase()))
+            })
+    }
+
     pub fn app_config(&self, name: &str) -> AppConfig {
         self.apps
             .iter()
@@ -174,6 +232,7 @@ impl Config {
             &mut document["launch_at_login"],
             value(self.launch_at_login),
         );
+        set_value(&mut document["live_prompted"], value(self.live_prompted));
         let mut patterns = toml_edit::Array::new();
         for pattern in &self.hide_patterns {
             patterns.push(pattern.as_str());
@@ -202,6 +261,17 @@ impl Config {
                 set_value(&mut table["large_image_key"], value(key.clone()));
             } else if let Some(table) = table.as_table_mut() {
                 table.remove("large_image_key");
+            }
+            set_value(&mut table["live"], value(app.live));
+            if let Some(port) = app.control_port {
+                set_value(&mut table["control_port"], value(i64::from(port)));
+            } else if let Some(table) = table.as_table_mut() {
+                table.remove("control_port");
+            }
+            if let Some(file) = &app.control_token_file {
+                set_value(&mut table["control_token_file"], value(file.clone()));
+            } else if let Some(table) = table.as_table_mut() {
+                table.remove("control_token_file");
             }
         }
         fs::write(path, document.to_string()).map_err(|e| e.to_string())?;
@@ -286,6 +356,24 @@ mod tests {
             config.app_config("photocraft"),
             config.app_config("PhotoCraft")
         );
+    }
+
+    #[test]
+    fn control_ports_are_distinct_and_overridable() {
+        let mut config = Config::default();
+        let ports: std::collections::BTreeSet<u16> = config
+            .apps
+            .keys()
+            .map(|name| config.control_port(name))
+            .collect();
+        // PdfCraft has no fixed port (0), the other six are distinct.
+        assert_eq!(ports.len(), 7);
+        config.apps.get_mut("PhotoCraft").unwrap().control_port = Some(9000);
+        assert_eq!(config.control_port("photocraft"), 9000);
+        assert!(config.app_config("PhotoCraft").live);
+        assert!(config
+            .control_token_file("PhotoCraft")
+            .ends_with("photocraft.token"));
     }
 
     #[test]

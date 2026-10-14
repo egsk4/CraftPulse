@@ -20,6 +20,7 @@ struct SettingsUpdate {
     hide_patterns: Option<Vec<String>>,
     action: Option<String>,
     launch_at_login: Option<bool>,
+    live_prompted: Option<bool>,
     apps: Option<std::collections::BTreeMap<String, AppConfig>>,
 }
 
@@ -30,6 +31,7 @@ struct SettingsResponse {
     hide_patterns: Vec<String>,
     action: String,
     launch_at_login: bool,
+    live_prompted: bool,
     apps: std::collections::BTreeMap<String, AppConfig>,
 }
 
@@ -44,6 +46,7 @@ impl SettingsServer {
         log: Arc<Mutex<Vec<String>>>,
         preview: Arc<Mutex<Option<PresenceCard>>>,
         test_request: Arc<Mutex<Option<PresenceCard>>>,
+        restart_needed: Arc<Mutex<Vec<String>>>,
     ) -> Self {
         let server = Server::http(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
             .expect("could not start local settings server");
@@ -61,6 +64,7 @@ impl SettingsServer {
                         &log,
                         &preview,
                         &test_request,
+                        &restart_needed,
                     );
                     let _ = request.respond(response);
                 }
@@ -81,6 +85,7 @@ fn handle_request(
     log: &Arc<Mutex<Vec<String>>>,
     preview: &Arc<Mutex<Option<PresenceCard>>>,
     test_request: &Arc<Mutex<Option<PresenceCard>>>,
+    restart_needed: &Arc<Mutex<Vec<String>>>,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let path = request.url().split('?').next().unwrap_or("/");
     if path == "/" {
@@ -110,6 +115,7 @@ fn handle_request(
                 hide_patterns: config.hide_patterns.clone(),
                 action: config.action.clone(),
                 launch_at_login: config.launch_at_login,
+                live_prompted: config.live_prompted,
                 apps: config.apps.clone(),
             })
             .unwrap_or_else(|_| "{}".to_string());
@@ -156,6 +162,9 @@ fn handle_request(
             if let Some(value) = update.launch_at_login {
                 config.launch_at_login = value;
             }
+            if let Some(value) = update.live_prompted {
+                config.live_prompted = value;
+            }
             if let Some(value) = update.apps {
                 config.apps = value
                     .into_iter()
@@ -186,6 +195,26 @@ fn handle_request(
                 "last_presence": *preview.lock().unwrap_or_else(|e| e.into_inner()),
             });
             json_response(response.to_string())
+        }
+        (&Method::Get, "/api/live") => {
+            let config = config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let statuses: Vec<_> = config
+                .apps
+                .keys()
+                .map(|name| crate::control::probe(&config, name))
+                .collect();
+            let restart = restart_needed
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            let body = serde_json::json!({"apps": statuses, "restart_needed": restart});
+            json_response(body.to_string())
+        }
+        (&Method::Post, "/api/live/enable") => {
+            let config = config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let names: Vec<&str> = config.apps.keys().map(String::as_str).collect();
+            let (applied, lines) = crate::control::enable_environment(&config, &names);
+            json_response(serde_json::json!({"applied": applied, "lines": lines}).to_string())
         }
         (&Method::Get, "/api/log") => {
             let entries = log.lock().unwrap_or_else(|e| e.into_inner()).clone();

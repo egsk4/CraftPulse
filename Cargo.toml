@@ -24,6 +24,8 @@ toml_edit = { version = "0.22", features = ["serde"] }
 tray-icon = "0.21"
 
 [target.'cfg(windows)'.dependencies]
+# Windows toast notifications (restart reminders).
+notify-rust = { version = "4", default-features = false }
 # Small settings popup (a borderless WebView2 window) above the tray icon.
 wry = "0.53"
 windows = { version = "0.58", features = [

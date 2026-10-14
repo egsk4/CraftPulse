@@ -233,3 +233,7 @@ CraftPulse is early, so bugs are expected and reports help a lot.
 ## License
 
 MIT
+
+## Live detection (recommended)
+
+CraftPulse can ask each Craft app directly what you're doing (tool, dialog, open document, and in LightCraft the selected photo) instead of guessing from window titles. Click **Turn on live detection** in the settings page, then restart your Craft apps once. This sets the apps' own `*_CONTROL_PORT` environment variables (PhotoCraft also gets a private token file). PdfCraft has no variable: start it with `pdfcraft --control "%USERPROFILE%\.pdfcraft-control.json"`. Only read-only queries are ever sent, and the channel listens on `127.0.0.1` only. If an app isn't reachable, CraftPulse falls back to window detection.

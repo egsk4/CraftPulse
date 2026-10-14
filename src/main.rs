@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+mod control;
 mod detection;
 mod hints;
+mod notify;
 mod popup;
 mod presence;
 mod privacy;
@@ -14,6 +16,7 @@ mod tests;
 mod tray;
 
 use config::Config;
+use control::ControlHub;
 use detection::ProcessDetector;
 use hints::read_hint;
 use presence::{PresenceCard, RpcWorker};
@@ -35,35 +38,51 @@ const APP_NAMES: [&str; 7] = [
     "DesignCraft",
 ];
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const RPC_RETRY_INTERVAL: Duration = Duration::from_secs(30);
-const RPC_RETRY_WINDOW: Duration = Duration::from_secs(5 * 60);
+/// How often to resend an unchanged card while connected. A refreshed or
+/// restarted Discord drops the activity (or the pipe), and this puts it back.
+const RPC_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+/// How often to try reaching Discord while it is closed. Failed connection
+/// attempts send nothing to Discord, so they don't count against the rate limit.
+const RPC_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 
 fn main() {
     let shared_config = Arc::new(Mutex::new(Config::load_or_create()));
     let log = Arc::new(Mutex::new(Vec::<String>::new()));
     let preview = Arc::new(Mutex::new(None));
     let test_request = Arc::new(Mutex::new(None));
+    let restart_needed = Arc::new(Mutex::new(Vec::<String>::new()));
     let settings = SettingsServer::start(
         Arc::clone(&shared_config),
         Arc::clone(&log),
         Arc::clone(&preview),
         Arc::clone(&test_request),
+        Arc::clone(&restart_needed),
     );
     let settings_url = settings.url();
+    // First run: open the settings page so the live-detection question is seen.
+    if !shared_config
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .live_prompted
+    {
+        let _ = open::that(&settings_url);
+    }
     let _server = settings;
 
     let quit = tray::start(settings_url);
     let mut detector = ProcessDetector::default();
+    let hub = ControlHub::start();
     let mut rpc = RpcWorker::new();
     let mut last_presence: Option<PresenceCard> = None;
     let mut last_rpc_attempt = Instant::now() - RPC_RETRY_INTERVAL;
-    let mut retry_started: Option<Instant> = None;
-    let mut selected_process: Option<(String, u32)> = None;
     let mut test_override: Option<(PresenceCard, Instant)> = None;
     let mut rate_limiter = RpcRateLimiter::default();
     let mut last_poll = Instant::now();
     let mut last_titles: Vec<String> = Vec::new();
     let mut last_unknown: Vec<String> = Vec::new();
+    let mut discord_unavailable_logged = false;
+    // Apps already reminded about this session (one toast each).
+    let mut toasted: Vec<String> = Vec::new();
 
     loop {
         if quit.load(std::sync::atomic::Ordering::Relaxed) {
@@ -88,7 +107,10 @@ fn main() {
         if detector.unknown != last_unknown {
             last_unknown = detector.unknown.clone();
             if !last_unknown.is_empty() {
-                push_log(&log, &format!("Unrecognised ArtCraft-like processes: {last_unknown:?}"));
+                push_log(
+                    &log,
+                    &format!("Unrecognised ArtCraft-like processes: {last_unknown:?}"),
+                );
             }
         }
         if detector.titles != last_titles {
@@ -97,30 +119,68 @@ fn main() {
                 push_log(&log, &format!("Window titles: {last_titles:?}"));
             }
         }
-        let app_running = detected.is_some();
-        let process_identity = detected
-            .as_ref()
-            .map(|app| (app.name.clone(), app.process_id));
-        if process_identity != selected_process && app_running {
-            retry_started = Some(Instant::now());
+        // Point the control-channel reader at the app we are showing.
+        hub.set_target(detected.as_ref().and_then(|app| {
+            let app_config = current_config.app_config(&app.name);
+            (app_config.enabled && app_config.live).then(|| {
+                (
+                    app.name.clone(),
+                    current_config.control_port(&app.name),
+                    current_config.control_token_file(&app.name),
+                )
+            })
+        }));
+        {
+            let needs: Vec<String> = detected
+                .as_ref()
+                .filter(|app| current_config.live_prompted && hub.needs_restart(&app.name))
+                .map(|app| vec![app.name.clone()])
+                .unwrap_or_default();
+            let mut shared = restart_needed.lock().unwrap_or_else(|e| e.into_inner());
+            if *shared != needs {
+                if let Some(name) = needs.first() {
+                    if !toasted.contains(name) {
+                        toasted.push(name.clone());
+                        notify::toast(
+                            "Restart needed",
+                            &format!("Close and reopen {name} once so CraftPulse can show what you're doing."),
+                        );
+                    }
+                    push_log(
+                        &log,
+                        &format!("{name} is running without live detection; restart it once to turn it on"),
+                    );
+                }
+                *shared = needs;
+            }
         }
-        selected_process = process_identity;
+        for message in hub.take_logs() {
+            push_log(&log, &message);
+        }
         let next_presence = detected.and_then(|app| {
             let app_config = current_config.app_config(&app.name);
             if !app_config.enabled || !current_config.enabled {
                 return None;
             }
             let hint = read_hint(&current_config.hints_dir(), &app.name);
-            let document = hint
+            // What the app itself says (control channel) beats anything guessed
+            // from its windows.
+            let live = hub.state_for(&app.name);
+            let document = live
                 .as_ref()
-                .and_then(|h| h.document.clone())
+                .and_then(|state| state.document.clone())
+                .or_else(|| hint.as_ref().and_then(|h| h.document.clone()))
                 .or(app.document.clone());
+            let busy = live.as_ref().and_then(|state| state.busy.clone());
+            let live_activity = live.as_ref().and_then(|state| state.activity(&app.name));
             let action = hint
                 .as_ref()
                 .and_then(|h| h.action.clone())
                 .or_else(|| app_config.action.clone())
-                .or_else(|| auto_activity.clone())
+                .or(busy)
                 .or_else(|| idle.then(|| "Idle".to_string()))
+                .or(live_activity)
+                .or_else(|| auto_activity.clone())
                 .unwrap_or_else(|| default_activity(&app.name, &current_config.action));
             Some(privacy::make_card(
                 &app,
@@ -150,52 +210,55 @@ fn main() {
             .map(|(card, _)| card.clone())
             .or(next_presence);
         if active_card.is_none() {
-            retry_started = None;
             if last_presence.is_some() && rate_limiter.try_acquire(Instant::now()) {
-                last_rpc_attempt = Instant::now();
                 rpc.clear();
                 last_presence = None;
             }
             // Allow an immediate send when presence comes back (re-enabled, or app returns).
             last_rpc_attempt = Instant::now() - RPC_RETRY_INTERVAL;
         } else if let Some(card) = active_card {
-            if retry_started.is_none() {
-                retry_started = Some(Instant::now());
-            }
             let changed = last_presence.as_ref() != Some(&card);
             let connected = last_presence.is_some();
+            let waited = last_rpc_attempt.elapsed();
             let should_send = if connected {
-                (changed && last_rpc_attempt.elapsed() >= Duration::from_secs(5))
-                    || (!changed && last_rpc_attempt.elapsed() >= RPC_RETRY_INTERVAL)
-            } else if test_override.is_some() {
-                last_rpc_attempt.elapsed() >= Duration::from_secs(5)
+                (changed && waited >= Duration::from_secs(5)) || waited >= RPC_KEEPALIVE_INTERVAL
             } else {
-                retry_started.is_some_and(|started| started.elapsed() < RPC_RETRY_WINDOW)
-                    && last_rpc_attempt.elapsed() >= RPC_RETRY_INTERVAL
+                // Not connected (Discord closed, restarted or refreshed): keep trying,
+                // quickly and without giving up, so presence returns by itself.
+                waited >= RPC_RETRY_INTERVAL
             };
             let now = Instant::now();
-            if should_send && rate_limiter.try_acquire(now) {
+            // Sending a card counts against Discord's rate limit; failing to
+            // connect sends nothing, so it never needs a slot.
+            if should_send && (!connected || rate_limiter.try_acquire(now)) {
                 last_rpc_attempt = now;
-                if !connected {
-                    push_log(&log, "Retrying Discord connection");
-                }
                 let (sent, timed_out) = rpc.set_activity(card.clone());
                 if sent {
+                    if !connected {
+                        push_log(&log, "Connected to Discord");
+                    }
                     last_presence = Some(card.clone());
                     *preview.lock().unwrap_or_else(|e| e.into_inner()) = Some(card);
                     if test_override.is_some() {
                         push_log(&log, "Test activity sent to Discord");
-                    } else {
+                    } else if changed || !connected {
                         push_log(&log, "Rich Presence updated");
                     }
                 } else {
+                    if connected {
+                        push_log(&log, "Lost the connection to Discord; reconnecting");
+                    } else if !discord_unavailable_logged {
+                        push_log(&log, "Discord is unavailable; retrying every few seconds");
+                    }
+                    discord_unavailable_logged = true;
                     last_presence = None;
                     if timed_out {
                         push_log(&log, "Discord RPC timed out after 4 seconds");
                         rpc = RpcWorker::new();
-                    } else {
-                        push_log(&log, "Discord is unavailable; will retry in 30 seconds");
                     }
+                }
+                if sent {
+                    discord_unavailable_logged = false;
                 }
             }
         }

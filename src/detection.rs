@@ -81,8 +81,8 @@ impl ProcessDetector {
 
         // Prefer the ArtCraft app whose window you are actually using.
         let foreground = foreground_process_id();
-        let focused = foreground
-            .and_then(|fpid| active.iter().find(|(_, _, pid, _)| *pid == fpid).cloned());
+        let focused =
+            foreground.and_then(|fpid| active.iter().find(|(_, _, pid, _)| *pid == fpid).cloned());
         let chosen = if focused.is_some() {
             focused
         } else if cfg!(target_os = "windows") {
@@ -129,7 +129,8 @@ impl ProcessDetector {
                                 }),
                         )
                         .collect();
-                    let (tabs, note, ui_activity) = tab_candidates_via_uia(process_id, name, &rules);
+                    let (tabs, note, ui_activity) =
+                        tab_candidates_via_uia(process_id, name, &rules);
                     self.uia_activity = ui_activity;
                     let names: Vec<String> = tabs.iter().map(|(name, _)| name.clone()).collect();
                     let selected = tabs
@@ -234,7 +235,7 @@ const DIALOG_ACTIVITIES: [(&str, &str); 7] = [
     ("open", "Opening a file"),
 ];
 
-fn dialog_activity(title: &str) -> Option<&'static str> {
+pub fn dialog_activity(title: &str) -> Option<&'static str> {
     let lower = title.trim().to_lowercase();
     DIALOG_ACTIVITIES
         .iter()
@@ -379,7 +380,9 @@ fn tab_candidates_via_uia(
             return BOOL(1);
         }
         buffer.truncate(count as usize);
-        let title = OsString::from_wide(&buffer).to_string_lossy().to_lowercase();
+        let title = OsString::from_wide(&buffer)
+            .to_string_lossy()
+            .to_lowercase();
         if fallback.is_none() {
             *fallback = Some(hwnd);
         }
@@ -414,7 +417,11 @@ fn tab_candidates_via_uia(
             return (Vec::new(), "UIA: could not read window".to_string(), None);
         };
         let Ok(condition) = automation.CreateTrueCondition() else {
-            return (Vec::new(), "UIA: could not create condition".to_string(), None);
+            return (
+                Vec::new(),
+                "UIA: could not create condition".to_string(),
+                None,
+            );
         };
         let Ok(elements) = root.FindAll(TreeScope_Descendants, &condition) else {
             return (Vec::new(), "UIA: could not search window".to_string(), None);
@@ -444,7 +451,10 @@ fn tab_candidates_via_uia(
                 continue;
             }
             if dump && dump_lines.len() < 800 {
-                let kind = element.CurrentControlType().map(|kind| kind.0).unwrap_or(-1);
+                let kind = element
+                    .CurrentControlType()
+                    .map(|kind| kind.0)
+                    .unwrap_or(-1);
                 dump_lines.push(format!(
                     "{kind} | {:?} | {}",
                     element_selected(&element),
@@ -456,8 +466,8 @@ fn tab_candidates_via_uia(
             let is_tab = kind.is_some_and(|kind| kind == UIA_TabItemControlTypeId);
             // Which activity rule (if any) is currently active? Earlier rules win.
             if !rules.is_empty() && ui_rule != Some(0) {
-                let button_like =
-                    kind.is_some_and(|kind| matches!(kind.0, 50000 | 50002 | 50007 | 50013 | 50019));
+                let button_like = kind
+                    .is_some_and(|kind| matches!(kind.0, 50000 | 50002 | 50007 | 50013 | 50019));
                 if button_like {
                     let lower = name.to_lowercase();
                     if let Some(position) = rules
@@ -529,7 +539,9 @@ fn tab_candidates_via_uia(
         } else if is_lightcraft && candidates.is_empty() {
             "UIA: open LightCraft's Info panel (I) to show the photo name".to_string()
         } else if !candidates.is_empty() {
-            let known = candidates.iter().any(|(_, selected)| *selected == Some(true));
+            let known = candidates
+                .iter()
+                .any(|(_, selected)| *selected == Some(true));
             format!(
                 "UIA: {} tab(s), selection {}",
                 candidates.len(),

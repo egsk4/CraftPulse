@@ -89,7 +89,9 @@ impl Popup {
     /// window's own focus events, because the web view inside the popup takes
     /// focus from its parent window and would make those events fire at once.
     pub fn lost_focus(&self) -> bool {
-        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId,
+        };
 
         // Give the popup time to take focus after it opens.
         if !self.visible || self.shown_at.elapsed() < std::time::Duration::from_millis(400) {
@@ -137,8 +139,7 @@ impl Popup {
 
         // Keep the popup on screen even on small displays.
         let height = HEIGHT.min(mh / scale - 120.0).max(360.0);
-        self.window
-            .set_inner_size(LogicalSize::new(WIDTH, height));
+        self.window.set_inner_size(LogicalSize::new(WIDTH, height));
         let (w, h) = (WIDTH * scale, height * scale);
         let gap = GAP * scale;
 

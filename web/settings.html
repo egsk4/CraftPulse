@@ -3,72 +3,255 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CraftPulse settings</title>
+  <title>CraftPulse</title>
   <style>
-    :root{color-scheme:dark;--bg:#111318;--panel:#191c23;--panel2:#20242d;--line:#303642;--text:#f0f1f4;--muted:#9ba3b2;--orange:#f58138;--green:#65d6a2}
-    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 18% -10%,#3b251d 0,transparent 36%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
-    main{width:min(1020px,calc(100% - 36px));margin:42px auto 80px}.brand{display:flex;align-items:center;gap:12px}.mark{width:40px;height:40px;border-radius:13px;background:linear-gradient(145deg,#ffad69,#ed6329);color:#1d1714;display:grid;place-items:center;font-weight:900;font-size:20px}.eyebrow{color:var(--orange);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800}h1{font-size:25px;margin:1px 0 0;letter-spacing:-.03em}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}.status{color:var(--green);font-size:13px}.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.panel{background:linear-gradient(150deg,#1d2028,#171a20);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 18px 48px #0002}.panel h2{font-size:16px;margin:0 0 6px}.sub{font-size:13px;color:var(--muted);margin:0 0 20px}.field{padding:16px 0;border-top:1px solid #ffffff0d;display:flex;justify-content:space-between;gap:16px;align-items:center}.field:first-of-type{border-top:0}.field strong{display:block;font-size:14px}.field small{display:block;color:var(--muted);margin-top:2px}.switch{appearance:none;width:43px;height:25px;background:#414652;border-radius:20px;position:relative;cursor:pointer;flex:none;transition:.2s}.switch:checked{background:var(--orange)}.switch:before{content:"";position:absolute;width:19px;height:19px;left:3px;top:3px;border-radius:50%;background:white;transition:.2s}.switch:checked:before{transform:translateX(18px)}input[type=text],textarea{display:block;width:100%;background:#12151a;border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--text);font:inherit;outline:none}input:focus,textarea:focus{border-color:var(--orange)}textarea{min-height:80px;resize:vertical}.app-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #ffffff0d}.app-icon{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:#292d37;color:#ffab72;font-weight:800}.app-row span{flex:1}.app-row small{display:block;color:var(--muted)}.preview{margin-top:18px;background:#252a33;border:1px solid #414753;border-radius:12px;padding:15px;display:flex;gap:12px}.orb{width:50px;height:50px;border-radius:14px;background:linear-gradient(145deg,#ffae69,#e76731);display:grid;place-items:center;color:#231710;font-weight:900}.preview strong{display:block}.preview p{margin:3px 0;color:#b9c0cc;font-size:13px}.label{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:19px 0 7px}.action{display:flex;gap:8px}.action input{flex:1}.button{background:var(--orange);border:0;border-radius:10px;padding:10px 15px;color:#211710;font-weight:800;cursor:pointer}.button.secondary{background:#303641;color:var(--text)}.footer{display:flex;align-items:center;gap:12px;margin-top:18px}.message{font-size:13px;color:var(--muted)}pre{white-space:pre-wrap;overflow:auto;background:#111419;border:1px solid var(--line);border-radius:10px;padding:12px;color:#bfc6d1;font:12px/1.6 ui-monospace,monospace;max-height:190px}.wide{grid-column:1/-1}.pill{font-size:11px;color:var(--green);background:#1c332b;padding:4px 8px;border-radius:30px}.hidden{display:none!important}@media(max-width:720px){.layout{grid-template-columns:1fr}header{align-items:flex-start;gap:12px;flex-direction:column}.wide{grid-column:auto}}
-    .app-row{display:grid;grid-template-columns:30px minmax(95px,1fr) 115px minmax(105px,1fr) 43px;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #ffffff0d}.app-icon{flex:none}.app-row strong{display:block;font-size:13px}.app-row small{font-size:11px}.app-hide,.app-action{min-width:0;width:100%;background:#12151a;border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--text);font:12px inherit}.app-hide{cursor:pointer}.app-action::placeholder{color:#828b99}
-    @media(max-width:720px){.app-row{grid-template-columns:30px 1fr 43px}.app-hide,.app-action{grid-column:2/4}.app-row .switch{grid-column:3;grid-row:1}}
-      /* Compact layout used by the tray popup (?popup=1) */
-    html.popup{zoom:.8} /* lower = smaller (try .7), higher = bigger */
+    :root{
+      color-scheme:dark;
+      --bg:#0d0f14;--surface:#151820;--surface2:#1c2029;--raised:#242936;
+      --line:#2b303c;--line2:#363c4b;
+      --text:#eef0f4;--muted:#98a1b1;--faint:#6b7384;
+      --accent:#ff8a3d;--accent2:#ffb36b;--accent-ink:#241406;
+      --ok:#5fd7a0;--warn:#f2c14e;--bad:#ff7a7a;--discord:#5865f2;
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html{-webkit-font-smoothing:antialiased}
+    body{margin:0;background:
+      radial-gradient(900px 420px at 12% -8%,#3a2217 0,transparent 60%),
+      radial-gradient(700px 380px at 100% 0,#1a2140 0,transparent 55%),var(--bg);
+      color:var(--text);font:14px/1.5 "Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif}
+    main{width:min(1080px,calc(100% - 32px));margin:32px auto 72px}
+    h1,h2,h3{margin:0;letter-spacing:-.02em}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
+    .brand{display:flex;align-items:center;gap:13px}
+    .mark{width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,var(--accent2),#ec5f27);display:grid;place-items:center;color:var(--accent-ink);font-weight:900;font-size:20px;box-shadow:0 8px 24px #ff7a2e40}
+    .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800}
+    h1{font-size:24px}
+    .chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);padding:6px 11px;border-radius:99px}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+    .dot.ok{background:var(--ok);box-shadow:0 0 0 3px #5fd7a026}
+    .dot.warn{background:var(--warn)}
+    .dot.bad{background:var(--bad)}
+
+    /* Hero: what Discord is showing right now */
+    .hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:18px;margin-bottom:18px}
+    .card{background:linear-gradient(160deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+    .card h2{font-size:15px}
+    .sub{color:var(--muted);font-size:13px;margin:4px 0 16px}
+    .discord{background:#111318;border:1px solid var(--line2);border-radius:12px;padding:14px}
+    .discord .tag{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+    .rp{display:flex;gap:13px;align-items:center}
+    .art{width:64px;height:64px;border-radius:12px;background:linear-gradient(145deg,var(--accent2),#e5602a);display:grid;place-items:center;font-weight:900;font-size:26px;color:var(--accent-ink);flex:none;position:relative}
+    .art.idle{background:var(--raised);color:var(--faint)}
+    .rp b{display:block;font-size:14px}
+    .rp span{display:block;color:#c3c9d4;font-size:13px}
+    .rp .time{color:var(--ok);font-size:12px;margin-top:2px}
+    .tester{display:flex;gap:8px;margin-top:14px}
+
+    /* Fields */
+    .field{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-top:1px solid #ffffff0b}
+    .field:first-of-type{border-top:0}
+    .field strong{display:block;font-size:14px}
+    .field small{display:block;color:var(--muted);margin-top:1px}
+    .switch{appearance:none;-webkit-appearance:none;width:42px;height:24px;flex:none;background:#3b4150;border-radius:99px;position:relative;cursor:pointer;transition:background .18s;border:0;margin:0}
+    .switch:before{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .18s}
+    .switch:checked{background:var(--accent)}
+    .switch:checked:before{transform:translateX(18px)}
+    .switch:focus-visible,input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+    label.cap{display:block;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:18px 0 7px}
+    input[type=text],textarea,select{width:100%;background:#0f1218;border:1px solid var(--line);border-radius:10px;color:var(--text);font:inherit;padding:10px 12px}
+    textarea{min-height:76px;resize:vertical}
+    input[type=text]:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none}
+    ::placeholder{color:#6f7788}
+    .btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:800;cursor:pointer;white-space:nowrap}
+    .btn:hover{filter:brightness(1.07)}
+    .btn.ghost{background:var(--raised);color:var(--text);font-weight:700}
+    .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .msg{color:var(--muted);font-size:13px}
+
+    /* Apps */
+    .apps{display:grid;gap:10px}
+    .app{display:grid;grid-template-columns:40px minmax(120px,1.1fr) minmax(110px,.7fr) minmax(120px,1fr) minmax(120px,.8fr) 42px;gap:12px;align-items:center;background:#11141a;border:1px solid var(--line);border-radius:13px;padding:11px 14px}
+    .app .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-weight:900;color:var(--accent-ink);background:var(--hue,var(--accent))}
+    .app strong{display:block;font-size:14px}
+    .app small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+    .app input[type=text],.app select{padding:8px 10px;font-size:13px;border-radius:9px}
+    .live-note{border:1px solid var(--line);background:#11141a;border-radius:12px;padding:14px 16px;margin-bottom:14px;color:#c3c9d4;font-size:13px}
+    .live-note b{color:var(--text)}
+    code,pre{font:12px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace}
+    code{background:#0b0d12;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:#ffcfa6}
+    pre{margin:0;white-space:pre-wrap;overflow:auto;max-height:200px;background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:12px;color:#b9c1cf}
+    details{margin-top:18px}
+    summary{cursor:pointer;color:var(--muted);font-weight:700;padding:6px 0}
+    .wide{margin-top:18px}
+    .hidden{display:none!important}
+
+    @media(max-width:880px){
+      .hero{grid-template-columns:1fr}
+      .app{grid-template-columns:40px 1fr 42px}
+      .app .c3,.app .c4,.app .c5{grid-column:1/-1}
+    }
+    /* Compact layout for the tray popup (?popup=1) */
+    html.popup{zoom:.8}
     html.popup main{width:calc(100% - 24px);margin:12px auto 20px}
-    html.popup header{margin-bottom:14px}
-    html.popup .layout{gap:12px}
-    html.popup .panel{padding:16px}
+    html.popup .top{margin-bottom:14px}
+    html.popup .hero{grid-template-columns:1fr}
+    html.popup .card{padding:16px}
+    html.popup .app{grid-template-columns:40px 1fr 42px}
+    html.popup .app .c3,html.popup .app .c4,html.popup .app .c5{grid-column:1/-1}
     html.popup body::after{content:"";position:fixed;inset:0;border:1px solid #3a4150;pointer-events:none}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
   </style>
 </head>
 <body>
 <main>
-  <header><div class="brand"><div class="mark">C</div><div><div class="eyebrow">ArtCraft companion</div><h1>CraftPulse</h1></div></div><div class="status" id="status">● Connected locally</div></header>
-  <div class="layout">
-    <section class="panel">
-      <h2>Presence settings</h2><p class="sub">Control what Discord shares while you create.</p>
-      <label class="field"><span><strong>Enable Rich Presence</strong><small>Pause all CraftPulse activity</small></span><input class="switch" id="enabled" type="checkbox"></label>
-      <label class="field"><span><strong>Hide project names</strong><small>Show “Private project” in place of document names</small></span><input class="switch" id="hide" type="checkbox"></label>
-      <label class="field"><span><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
-      <div class="label">Default activity</div><input type="text" id="action" maxlength="100" placeholder="Creating">
-      <div class="label">Hide names matching these regular expressions</div><textarea id="patterns" placeholder="One pattern per line, e.g. confidential|client-name"></textarea>
-      <div class="footer"><button class="button" id="save">Save changes</button><span class="message" id="message"></span></div>
-    </section>
-    <section class="panel">
-      <h2>Live card preview</h2><p class="sub">A preview of how your activity appears in Discord.</p>
-      <div class="preview"><div class="orb">P</div><div><strong id="preview-title">Poster concept</strong><p id="preview-state">in PhotoCraft — Editing</p></div></div>
-      <div class="label">Test an activity</div><div class="action"><input type="text" id="test-action" value="Exporting" maxlength="100"><button class="button secondary" id="test">Preview</button></div>
-      <div class="label">Per-app overrides</div><div id="apps"></div>
-    </section>
-    <section class="panel wide">
-      <div style="display:flex;justify-content:space-between;align-items:center"><div><h2>Diagnostics & activity log</h2><p class="sub">Local status information for troubleshooting.</p></div><button class="button secondary" id="refresh">Refresh</button></div>
-      <div class="label">System</div><pre id="diagnostics">Loading…</pre><div class="label">Recent events</div><pre id="log">Loading…</pre>
-    </section>
+  <div class="top">
+    <div class="brand"><div class="mark">C</div><div><div class="eyebrow">ArtCraft companion</div><h1>CraftPulse</h1></div></div>
+    <span class="chip"><span class="dot" id="status-dot"></span><span id="status">Connecting…</span></span>
   </div>
+
+  <section class="card hidden" id="first-run" style="margin-bottom:18px;border-color:var(--accent)">
+    <h2>Turn on smart detection?</h2>
+    <p class="sub" style="margin-bottom:10px">With it on, CraftPulse shows exactly what you're doing in each Craft app (the tool, dialog and document or photo) instead of a generic “Editing”. Your Craft apps need to be restarted once.</p>
+    <p class="sub">What changes: the apps open a private connection on your computer that CraftPulse reads. It's local only, but other programs on your computer could also use it, so skip this if you share the machine with software you don't trust.</p>
+    <div class="row"><button class="btn" id="fr-yes">Yes, turn it on</button><button class="btn ghost" id="fr-no">Not now</button></div>
+  </section>
+  <section class="card hidden" id="restart-note" style="margin-bottom:18px;border-color:var(--warn)">
+    <h2>Restart needed</h2>
+    <p class="sub" style="margin-bottom:0" id="restart-text"></p>
+  </section>
+  <section class="hero">
+    <div class="card">
+      <h2>On Discord right now</h2>
+      <p class="sub">Exactly what your friends see. It updates by itself as you switch tools, open dialogs or change documents.</p>
+      <div class="discord">
+        <div class="tag">Playing ArtCraft</div>
+        <div class="rp">
+          <div class="art idle" id="art">–</div>
+          <div><b id="preview-title">Nothing yet</b><span id="preview-state">Open a Craft app to start sharing</span><div class="time" id="preview-note"></div></div>
+        </div>
+      </div>
+      <label class="cap" for="test-action">Try a custom activity (shown for 10 seconds)</label>
+      <div class="tester"><input type="text" id="test-action" value="Exporting" maxlength="100"><button class="btn ghost" id="test">Preview</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Presence</h2>
+      <p class="sub">Control what Discord shares while you create.</p>
+      <label class="field"><span><strong>Enable Rich Presence</strong><small>Turn all sharing on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
+      <label class="field"><span><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
+      <label class="field"><span><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
+      <label class="cap" for="action">Fallback activity</label>
+      <input type="text" id="action" maxlength="100" placeholder="Creating">
+      <label class="cap" for="patterns">Hide names matching (regular expressions)</label>
+      <textarea id="patterns" placeholder="One per line, e.g. confidential|client-name"></textarea>
+      <div class="row" style="margin-top:16px"><button class="btn" id="save">Save changes</button><span class="msg" id="message"></span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><h2>Apps</h2><p class="sub" style="margin-bottom:0">Each app reports what you’re doing straight from the app, so the status is exact: the tool, dialog, document or photo.</p></div>
+      <button class="btn" id="enable-live" title="Makes the Craft apps start with their control channel on">Turn on live detection</button>
+    </div>
+    <div class="live-note hidden" id="live-note"></div>
+    <div class="apps" id="apps" style="margin-top:16px"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Diagnostics</h2>
+    <details open><summary>Recent events</summary><pre id="log">Loading…</pre></details>
+    <details><summary>System</summary><pre id="diagnostics">Loading…</pre></details>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" id="refresh">Refresh</button></div>
+  </section>
 </main>
 <script>
 if(new URLSearchParams(location.search).has("popup"))document.documentElement.classList.add("popup");
 const token=new URLSearchParams(location.search).get("token")||"";
 const headers={"Content-Type":"application/json","X-CraftPulse-Token":token};
 const $=id=>document.getElementById(id);
-let config={};
-async function call(path,options={}){const response=await fetch(path,{...options,headers:{...headers,...options.headers}});if(!response.ok)throw new Error(await response.text());return response.json()}
-function escapeHtml(value){return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]))}
+const HUES={PhotoCraft:"#ff9a52",VectorCraft:"#7ad7b3",FilmCraft:"#ff7a8a",LightCraft:"#ffd166",PdfCraft:"#ff8f6b",EffectCraft:"#b392ff",DesignCraft:"#6fc3ff"};
+let config={},live={},saving=false;
+async function call(path,options={}){const r=await fetch(path,{...options,headers:{...headers,...options.headers}});if(!r.ok)throw new Error(await r.text());return r.json()}
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function setStatus(text,kind){$("status").textContent=text;$("status-dot").className="dot "+(kind||"")}
+
+function liveLabel(name,app){
+  const s=live[name];
+  if(!app.enabled)return['','Paused'];
+  if(!app.live)return['','Window detection'];
+  if(!s)return['','Checking…'];
+  return s.reachable?['ok','Live detection']:['warn','Waiting for the app'];
+}
 function drawApps(){
   const entries=Object.entries(config.apps||{});
   $("apps").innerHTML=entries.map(([name,app])=>{
-    const safeName=escapeHtml(name);
-    const safeInitial=escapeHtml(name[0]||"A");
-    return `<div class="app-row"><div class="app-icon">${safeInitial}</div><div><strong>${safeName}</strong><small>ArtCraft application</small></div><select class="app-hide" aria-label="Privacy for ${safeName}" data-app="${safeName}"><option value="inherit" ${app.hide_project_name==null?"selected":""}>Privacy: inherit</option><option value="hidden" ${app.hide_project_name===true?"selected":""}>Always hide</option><option value="visible" ${app.hide_project_name===false?"selected":""}>Show name</option></select><input class="app-action" aria-label="Activity for ${safeName}" data-app="${safeName}" type="text" maxlength="100" value="${escapeHtml(app.action||"")}" placeholder="Default: ${escapeHtml(config.action)}"><input class="switch app-switch" aria-label="Enable ${safeName}" data-app="${safeName}" type="checkbox" ${app.enabled?"checked":""}></div>`;
+    const n=esc(name),[kind,label]=liveLabel(name,app),hue=HUES[name]||"#ff8a3d";
+    return `<div class="app" style="--hue:${hue}">
+      <div class="ic">${esc(name[0]||"A")}</div>
+      <div><strong>${n}</strong><small><span class="dot ${kind}"></span>${label}</small></div>
+      <div class="c3"><select aria-label="Privacy for ${n}" data-app="${n}" class="app-hide"><option value="inherit" ${app.hide_project_name==null?"selected":""}>Privacy: default</option><option value="hidden" ${app.hide_project_name===true?"selected":""}>Always hide name</option><option value="visible" ${app.hide_project_name===false?"selected":""}>Show name</option></select></div>
+      <div class="c4"><input type="text" class="app-action" data-app="${n}" aria-label="Fixed activity for ${n}" maxlength="100" value="${esc(app.action||"")}" placeholder="Auto: what you’re doing"></div>
+      <div class="c5"><select aria-label="Detection for ${n}" data-app="${n}" class="app-live"><option value="live" ${app.live?"selected":""}>Live + window</option><option value="window" ${!app.live?"selected":""}>Window only</option></select></div>
+      <input class="switch app-switch" aria-label="Enable ${n}" data-app="${n}" type="checkbox" ${app.enabled?"checked":""}>
+    </div>`;
   }).join("");
-  document.querySelectorAll(".app-switch").forEach(node=>node.addEventListener("change",e=>{config.apps[e.target.dataset.app].enabled=e.target.checked;save()}));
-  document.querySelectorAll(".app-hide").forEach(node=>node.addEventListener("change",e=>{const app=config.apps[e.target.dataset.app];app.hide_project_name=e.target.value==="inherit"?null:e.target.value==="hidden";save()}));
-  document.querySelectorAll(".app-action").forEach(node=>node.addEventListener("change",e=>{const value=e.target.value.trim();config.apps[e.target.dataset.app].action=value||null;save()}));
+  const on=(sel,fn)=>document.querySelectorAll(sel).forEach(n=>n.addEventListener("change",fn));
+  on(".app-switch",e=>{config.apps[e.target.dataset.app].enabled=e.target.checked;save()});
+  on(".app-hide",e=>{config.apps[e.target.dataset.app].hide_project_name=e.target.value==="inherit"?null:e.target.value==="hidden";save()});
+  on(".app-action",e=>{config.apps[e.target.dataset.app].action=e.target.value.trim()||null;save()});
+  on(".app-live",e=>{config.apps[e.target.dataset.app].live=e.target.value==="live";save()});
 }
-async function load(){config=await call("/api/settings");$("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;$("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");drawApps();await refresh();}
-async function save(){config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;config.action=$("action").value;config.hide_patterns=$("patterns").value.split("\n").map(x=>x.trim()).filter(Boolean);try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";$("status").textContent="● Settings saved";setTimeout(()=>$("message").textContent="",1800)}catch(err){$("message").textContent=err.message;$("status").textContent="● Could not save"}}
-async function refresh(){try{$("diagnostics").textContent=JSON.stringify(await call("/api/diagnostics"),null,2);$("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet."}catch(err){$("diagnostics").textContent=err.message}}
+function drawPreview(card){
+  const art=$("art");
+  if(!card){art.textContent="–";art.className="art idle";$("preview-title").textContent="Nothing yet";$("preview-state").textContent="Open a Craft app to start sharing";$("preview-note").textContent="";return}
+  art.textContent=(card.app_name||"A")[0];art.className="art";
+  art.style.background=`linear-gradient(145deg,${HUES[card.app_name]||"#ff9a52"},#e5602a)`;
+  $("preview-title").textContent=card.document;$("preview-state").textContent=card.state;$("preview-note").textContent="● Live";
+}
+async function load(){
+  config=await call("/api/settings");
+  $("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;
+  $("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");
+  drawApps();$("first-run").classList.toggle("hidden",!!config.live_prompted);setStatus("Running locally","ok");await refresh();
+}
+async function save(){
+  config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;
+  config.action=$("action").value;config.hide_patterns=$("patterns").value.split("\n").map(x=>x.trim()).filter(Boolean);
+  try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";setTimeout(()=>$("message").textContent="",1800);drawApps()}
+  catch(err){$("message").textContent=err.message;setStatus("Could not save","bad")}
+}
+async function refresh(){
+  try{
+    const diag=await call("/api/diagnostics");
+    $("diagnostics").textContent=JSON.stringify(diag,null,2);drawPreview(diag.last_presence);
+    $("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet.";
+    const lv=await call("/api/live");live={};lv.apps.forEach(s=>live[s.name]=s);
+    $("restart-note").classList.toggle("hidden",!lv.restart_needed.length);
+    $("restart-text").textContent=lv.restart_needed.join(", ")+" was opened before smart detection was on. Close it and open it again once, and CraftPulse will show what you're doing.";if(!$("apps").contains(document.activeElement)||document.activeElement.tagName==="BODY")drawApps();
+    setStatus("Running locally","ok");
+  }catch(err){setStatus("Local connection error","bad");$("diagnostics").textContent=err.message}
+}
+$("enable-live").onclick=async()=>{
+  const note=$("live-note");note.classList.remove("hidden");note.textContent="Working…";
+  try{
+    const r=await call("/api/live/enable",{method:"POST",body:"{}"});
+    const lines=r.lines.map(l=>`<code>${esc(l)}</code>`).join(" ");
+    note.innerHTML=r.applied
+      ?`<b>Done.</b> Close and reopen your Craft apps once. After that CraftPulse shows exactly what you’re doing, including the photo name in LightCraft without opening the Info tab. PdfCraft has no setting for this: start it with <code>pdfcraft --control "%USERPROFILE%\\.pdfcraft-control.json"</code>.`
+      :`<b>Add these to your environment</b> (this platform can’t set them for you), then restart the apps: ${lines}`;
+  }catch(err){note.textContent=err.message}
+};
+async function answerFirstRun(yes){
+  if(yes){try{await call("/api/live/enable",{method:"POST",body:"{}"});$("live-note").classList.remove("hidden");$("live-note").innerHTML="<b>Done.</b> Close and reopen your Craft apps once.";}catch(e){}}
+  config.live_prompted=true;$("first-run").classList.add("hidden");await save();
+}
+$("fr-yes").onclick=()=>answerFirstRun(true);$("fr-no").onclick=()=>answerFirstRun(false);
 $("save").onclick=save;$("refresh").onclick=refresh;
-$("test").onclick=async()=>{const result=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});$("preview-title").textContent=result.document;$("preview-state").textContent=result.state};
-load().catch(error=>{$("status").textContent="● Local connection error";$("diagnostics").textContent=error.message});
+["enabled","hide","launch"].forEach(id=>$(id).addEventListener("change",save));
+$("test").onclick=async()=>{const r=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});drawPreview(r)};
+load().catch(e=>{setStatus("Local connection error","bad");$("diagnostics").textContent=e.message});
+setInterval(()=>{if(!document.hidden)refresh()},4000);
 </script>
 </body>
 </html>

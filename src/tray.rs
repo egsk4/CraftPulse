@@ -98,8 +98,7 @@ fn run_tray(settings_url: String, quit: Arc<AtomicBool>) {
     }
 
     event_loop.run(move |event, target, control_flow| {
-        *control_flow =
-            ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(50));
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(50));
         if quit.load(Ordering::Relaxed) {
             *control_flow = ControlFlow::Exit;
             return;
