@@ -47,13 +47,23 @@ fn run_tray(settings_url: String, quit: Arc<AtomicBool>) {
     let menu = Menu::new();
     let open_item = MenuItem::new("Open CraftPulse", true, None);
     let browser_item = MenuItem::new("Open in browser", true, None);
+    let pause_hour_item = MenuItem::new("Pause sharing for 1 hour", true, None);
+    let pause_item = MenuItem::new("Pause until I resume", true, None);
+    let resume_item = MenuItem::new("Resume sharing", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
     let _ = menu.append_items(&[
         &open_item,
         &browser_item,
         &PredefinedMenuItem::separator(),
+        &pause_hour_item,
+        &pause_item,
+        &resume_item,
+        &PredefinedMenuItem::separator(),
         &quit_item,
     ]);
+    let pause_hour_id = pause_hour_item.id().clone();
+    let pause_id = pause_item.id().clone();
+    let resume_id = resume_item.id().clone();
     let open_id = open_item.id().clone();
     let browser_id = browser_item.id().clone();
     let quit_id = quit_item.id().clone();
@@ -124,6 +134,12 @@ fn run_tray(settings_url: String, quit: Arc<AtomicBool>) {
                 show_popup(&mut popup, target, &popup_url, &browser_url, None);
             } else if event.id == browser_id {
                 let _ = open::that(&browser_url);
+            } else if event.id == pause_hour_id {
+                crate::pause::pause_for_minutes(60);
+            } else if event.id == pause_id {
+                crate::pause::pause_until_resumed();
+            } else if event.id == resume_id {
+                crate::pause::resume();
             } else if event.id == quit_id {
                 quit.store(true, Ordering::Relaxed);
                 *control_flow = ControlFlow::Exit;

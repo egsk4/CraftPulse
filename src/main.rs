@@ -4,16 +4,22 @@ mod config;
 mod control;
 mod detection;
 mod hints;
+mod history;
+mod milestones;
 mod notify;
+mod pause;
 mod popup;
 mod presence;
 mod privacy;
+mod quiet;
 mod rate_limit;
 mod settings;
 mod startup;
+mod stats;
 #[cfg(test)]
 mod tests;
 mod tray;
+mod update;
 
 use config::Config;
 use control::ControlHub;
@@ -59,6 +65,7 @@ fn main() {
         Arc::clone(&restart_needed),
     );
     let settings_url = settings.url();
+    update::start(Arc::clone(&shared_config));
     // First run: open the settings page so the live-detection question is seen.
     if !shared_config
         .lock()
@@ -81,18 +88,27 @@ fn main() {
     let mut last_titles: Vec<String> = Vec::new();
     let mut last_unknown: Vec<String> = Vec::new();
     let mut discord_unavailable_logged = false;
+    let mut milestones = milestones::Milestones::default();
+    let mut last_auto_pause: Option<&'static str> = None;
+    let mut stat_carry = 0.0_f64;
+    let mut last_stats_save = Instant::now();
+    // Elapsed-timer starting points (unix seconds), per app session and per document.
+    let mut session_timer: Option<((String, u32), i64)> = None;
+    let mut document_timer: Option<((String, u32, Option<String>), i64)> = None;
     // Apps already reminded about this session (one toast each).
     let mut toasted: Vec<String> = Vec::new();
 
     loop {
         if quit.load(std::sync::atomic::Ordering::Relaxed) {
             rpc.quit();
+            stats::save();
             break;
         }
         let elapsed = last_poll.elapsed();
         if elapsed < POLL_INTERVAL {
             thread::sleep(POLL_INTERVAL - elapsed);
         }
+        let loop_seconds = last_poll.elapsed().as_secs_f64().min(2.0);
         last_poll = Instant::now();
 
         let current_config = {
@@ -157,6 +173,12 @@ fn main() {
         for message in hub.take_logs() {
             push_log(&log, &message);
         }
+        let app_present = detected.is_some();
+        let now_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let in_use_app = detected.as_ref().map(|app| app.name.clone());
         let next_presence = detected.and_then(|app| {
             let app_config = current_config.app_config(&app.name);
             if !app_config.enabled || !current_config.enabled {
@@ -182,14 +204,115 @@ fn main() {
                 .or(live_activity)
                 .or_else(|| auto_activity.clone())
                 .unwrap_or_else(|| default_activity(&app.name, &current_config.action));
-            Some(privacy::make_card(
+            let started_at = match current_config.timer_mode.as_str() {
+                "session" => {
+                    let key = (app.name.clone(), app.process_id);
+                    if session_timer.as_ref().map(|(k, _)| k) != Some(&key) {
+                        session_timer = Some((key, now_unix));
+                    }
+                    session_timer.as_ref().map(|(_, start)| *start)
+                }
+                "document" => {
+                    let key = (app.name.clone(), app.process_id, document.clone());
+                    if document_timer.as_ref().map(|(k, _)| k) != Some(&key) {
+                        document_timer = Some((key, now_unix));
+                    }
+                    document_timer.as_ref().map(|(_, start)| *start)
+                }
+                _ => None,
+            };
+            let mut card = privacy::make_card(
                 &app,
                 document.as_deref(),
                 &action,
                 &current_config,
                 &app_config,
-            ))
+            );
+            card.started_at = started_at;
+            let detail = live.as_ref().and_then(|state| state.detail.clone());
+            let private = card.document == "Private project" || card.document == "Working";
+            let shown_detail = if current_config.show_details && !private {
+                detail.unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let document_name = card.document.clone();
+            let values = [
+                ("app", app.name.as_str()),
+                ("activity", action.as_str()),
+                ("document", document_name.as_str()),
+                ("detail", shown_detail.as_str()),
+            ];
+            let mut details_text =
+                privacy::render_template(&current_config.details_template, &values);
+            // Without {detail} in the template, extras are appended to the document line.
+            if !shown_detail.is_empty() && !current_config.details_template.contains("{detail}") {
+                details_text = format!("{details_text} · {shown_detail}");
+            }
+            if !details_text.is_empty() {
+                card.document = hints::truncate_chars(&details_text, 128);
+            }
+            let state_text = privacy::render_template(&current_config.state_template, &values);
+            if !state_text.is_empty() {
+                card.state = hints::truncate_chars(&state_text, 128);
+            }
+            history::record(now_unix, &app.name, &action, &document_name);
+            history::set_current(document.clone().map(|name| (app.name.clone(), name)));
+            if current_config.milestones {
+                let key = (app.name.clone(), app.process_id);
+                if let Some(note) = milestones.update(&key, now_unix, &action, Instant::now()) {
+                    card.state = hints::truncate_chars(&format!("{} · {note}", card.state), 128);
+                }
+            }
+            card.buttons = current_config
+                .buttons
+                .iter()
+                .filter(|button| button.is_valid())
+                .take(2)
+                .map(|button| (button.label.trim().to_string(), button.url.clone()))
+                .collect();
+            Some(card)
         });
+        // Count time in each app (only while you're active and sharing isn't paused).
+        if let Some(name) = in_use_app.as_ref().filter(|_| !idle && !pause::is_paused()) {
+            stat_carry += loop_seconds;
+            if stat_carry >= 1.0 {
+                let whole = stat_carry as u64;
+                stat_carry -= whole as f64;
+                stats::record(name, stats::day_of(now_unix), whole);
+            }
+        }
+        if last_stats_save.elapsed() >= Duration::from_secs(60) {
+            last_stats_save = Instant::now();
+            stats::save();
+        }
+        // Paused from the tray or settings: show nothing.
+        let auto_pause: Option<&'static str> = if quiet::is_quiet(&current_config) {
+            Some("quiet hours")
+        } else if current_config.pause_while_streaming && detector.streaming {
+            Some("a streaming or recording app is running")
+        } else {
+            None
+        };
+        pause::set_auto(auto_pause);
+        if auto_pause != last_auto_pause {
+            last_auto_pause = auto_pause;
+            match auto_pause {
+                Some(reason) => push_log(&log, &format!("Sharing paused: {reason}")),
+                None => push_log(&log, "Sharing resumed"),
+            }
+        }
+        let next_presence = if pause::is_paused() || auto_pause.is_some() {
+            None
+        } else {
+            next_presence
+        };
+        if !app_present {
+            milestones.reset();
+            history::set_current(None);
+            session_timer = None;
+            document_timer = None;
+        }
 
         let pending_test = test_request
             .lock()

@@ -6,7 +6,7 @@ CraftPulse is early and has bugs. The current focus is **PhotoCraft** and **Ligh
 
 ## Setup
 
-You need the [Rust toolchain](https://rustup.rs/) (stable) and Git. Windows is the main development platform, because most detection uses Windows UI Automation.
+You need the [Rust toolchain](https://rustup.rs/) (stable) and Git. Windows is the main development platform (`build = "src/build.rs"` in `Cargo.toml` is what embeds the exe icon; without it the exe has the generic icon), because most detection uses Windows UI Automation.
 
 ```powershell
 git clone https://github.com/egsk4/CraftPulse.git
@@ -51,6 +51,12 @@ Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they
 | --- | --- |
 | `src/main.rs` | Main loop, retry and timing logic, default activity per app |
 | `src/control.rs` | Live detection: talks to each app's JSON-lines control channel (read-only), maps tools, dialogs and documents to activity text, and powers the settings page's live status |
+| `src/update.rs` | Background check of GitHub releases (`/releases`); only notifies, never installs. The crate version in `Cargo.toml` must match the release you ship |
+| `src/quiet.rs` | Quiet-hours window check (uses local time via `chrono`) |
+| `src/milestones.rs` | Hour marks and export counts for the optional card notes |
+| `src/history.rs` | In-memory recent activity and the open document (for "Hide this document") |
+| `src/pause.rs` | Shared pause state (tray menu, settings page, main loop) |
+| `src/stats.rs` | Local per-app usage time, saved to `stats.json` |
 | `src/notify.rs` | Windows toast notifications (restart reminder) |
 | `src/detection.rs` | App, window title, dialog and UI Automation detection |
 | `src/config.rs` | `config.toml` structs, loading, comment-preserving saving, live reload |

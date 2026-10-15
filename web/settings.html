@@ -1,168 +1,259 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CraftPulse</title>
+  <script>
+    // Apply the remembered theme before first paint so there is no flash.
+    try{var t=localStorage.getItem("cp-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}
+  </script>
   <style>
-    :root{
+    /* Themes. Dark is the default; "system" follows the OS; "mono" is strict grayscale. */
+    :root,:root[data-theme="dark"]{
       color-scheme:dark;
-      --bg:#0d0f14;--surface:#151820;--surface2:#1c2029;--raised:#242936;
-      --line:#2b303c;--line2:#363c4b;
-      --text:#eef0f4;--muted:#98a1b1;--faint:#6b7384;
-      --accent:#ff8a3d;--accent2:#ffb36b;--accent-ink:#241406;
-      --ok:#5fd7a0;--warn:#f2c14e;--bad:#ff7a7a;--discord:#5865f2;
-      --radius:16px;
+      --bg:#0f1012;--surface:#16171a;--raised:#1d1f23;--sunk:#0c0d0f;--line:#2a2c31;--line-strong:#3a3d44;
+      --text:#ececee;--muted:#9a9ca3;--faint:#6a6c73;
+      --accent:#ff8a3d;--on-accent:#1a0f06;--ok:#4fbf8b;--warn:#e0b341;--bad:#ef6b6b;
     }
+    :root[data-theme="light"]{
+      color-scheme:light;
+      --bg:#f5f4f1;--surface:#ffffff;--raised:#f0eeea;--sunk:#ebe9e4;--line:#dedbd4;--line-strong:#c9c5bc;
+      --text:#1b1b1d;--muted:#5f6168;--faint:#8a8c93;
+      --accent:#c9500c;--on-accent:#ffffff;--ok:#1f8a5b;--warn:#a97a0a;--bad:#c23b3b;
+    }
+    :root[data-theme="mono"]{
+      color-scheme:dark;
+      --bg:#0b0b0b;--surface:#131313;--raised:#1a1a1a;--sunk:#080808;--line:#2a2a2a;--line-strong:#404040;
+      --text:#f2f2f2;--muted:#a0a0a0;--faint:#6e6e6e;
+      --accent:#f2f2f2;--on-accent:#0b0b0b;--ok:#f2f2f2;--warn:#a0a0a0;--bad:#f2f2f2;
+    }
+    @media (prefers-color-scheme:light){
+      :root[data-theme="system"]{
+        color-scheme:light;
+        --bg:#f5f4f1;--surface:#ffffff;--raised:#f0eeea;--sunk:#ebe9e4;--line:#dedbd4;--line-strong:#c9c5bc;
+        --text:#1b1b1d;--muted:#5f6168;--faint:#8a8c93;
+        --accent:#c9500c;--on-accent:#ffffff;--ok:#1f8a5b;--warn:#a97a0a;--bad:#c23b3b;
+      }
+    }
+
     *{box-sizing:border-box}
-    html{-webkit-font-smoothing:antialiased}
-    body{margin:0;background:
-      radial-gradient(900px 420px at 12% -8%,#3a2217 0,transparent 60%),
-      radial-gradient(700px 380px at 100% 0,#1a2140 0,transparent 55%),var(--bg);
-      color:var(--text);font:14px/1.5 "Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif}
-    main{width:min(1080px,calc(100% - 32px));margin:32px auto 72px}
-    h1,h2,h3{margin:0;letter-spacing:-.02em}
-    .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
-    .brand{display:flex;align-items:center;gap:13px}
-    .mark{width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,var(--accent2),#ec5f27);display:grid;place-items:center;color:var(--accent-ink);font-weight:900;font-size:20px;box-shadow:0 8px 24px #ff7a2e40}
-    .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800}
-    h1{font-size:24px}
-    .chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);padding:6px 11px;border-radius:99px}
-    .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
-    .dot.ok{background:var(--ok);box-shadow:0 0 0 3px #5fd7a026}
-    .dot.warn{background:var(--warn)}
+    html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+    main{width:min(960px,calc(100% - 32px));margin:36px auto 80px}
+    h1,h2{margin:0;font-weight:600;letter-spacing:-.01em}
+    h1{font-size:18px}
+    h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+    p{margin:0}
+    .muted{color:var(--muted)}
+    .num{font-variant-numeric:tabular-nums}
+
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:28px}
+    .wordmark{display:flex;align-items:baseline;gap:10px}
+    .wordmark span{color:var(--faint);font-size:12px}
+    .status{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;display:inline-block}
+    .dot.ok{background:var(--ok)}
+    .dot.warn{background:transparent;box-shadow:inset 0 0 0 2px var(--warn)}
     .dot.bad{background:var(--bad)}
 
-    /* Hero: what Discord is showing right now */
-    .hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:18px;margin-bottom:18px}
-    .card{background:linear-gradient(160deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:22px}
-    .card h2{font-size:15px}
-    .sub{color:var(--muted);font-size:13px;margin:4px 0 16px}
-    .discord{background:#111318;border:1px solid var(--line2);border-radius:12px;padding:14px}
-    .discord .tag{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
-    .rp{display:flex;gap:13px;align-items:center}
-    .art{width:64px;height:64px;border-radius:12px;background:linear-gradient(145deg,var(--accent2),#e5602a);display:grid;place-items:center;font-weight:900;font-size:26px;color:var(--accent-ink);flex:none;position:relative}
-    .art.idle{background:var(--raised);color:var(--faint)}
-    .rp b{display:block;font-size:14px}
-    .rp span{display:block;color:#c3c9d4;font-size:13px}
-    .rp .time{color:var(--ok);font-size:12px;margin-top:2px}
-    .tester{display:flex;gap:8px;margin-top:14px}
+    section{margin-bottom:36px}
+    .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
+    .section-head p{color:var(--muted);font-size:13px;margin-top:4px;max-width:56ch}
 
-    /* Fields */
-    .field{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-top:1px solid #ffffff0b}
-    .field:first-of-type{border-top:0}
-    .field strong{display:block;font-size:14px}
-    .field small{display:block;color:var(--muted);margin-top:1px}
-    .switch{appearance:none;-webkit-appearance:none;width:42px;height:24px;flex:none;background:#3b4150;border-radius:99px;position:relative;cursor:pointer;transition:background .18s;border:0;margin:0}
-    .switch:before{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .18s}
+    .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 18px}
+    .row+.row{border-top:1px solid var(--line)}
+    .row strong{display:block;font-weight:600;font-size:14px}
+    .row small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+    .row .grow{flex:1;min-width:0}
+
+    /* Now showing */
+    .now{display:flex;gap:16px;align-items:center;padding:18px}
+    .tile{width:56px;height:56px;border-radius:10px;background:var(--raised);border:1px solid var(--line);display:grid;place-items:center;font-size:22px;font-weight:600;color:var(--text);flex:none}
+    .now b{display:block;font-size:15px;font-weight:600}
+    .now .line{color:var(--muted);font-size:13px}
+    .now .time{color:var(--muted);font-size:12px;margin-top:3px}
+    .now .live{display:inline-flex;align-items:center;gap:6px}
+    .try{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--line);background:var(--sunk);border-radius:0 0 10px 10px}
+
+    /* Controls */
+    .switch{appearance:none;-webkit-appearance:none;width:38px;height:22px;flex:none;margin:0;border:0;border-radius:99px;background:var(--line-strong);position:relative;cursor:pointer;transition:background .15s}
+    .switch:before{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--bg);transition:transform .15s}
     .switch:checked{background:var(--accent)}
-    .switch:checked:before{transform:translateX(18px)}
-    .switch:focus-visible,input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
-    label.cap{display:block;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:18px 0 7px}
-    input[type=text],textarea,select{width:100%;background:#0f1218;border:1px solid var(--line);border-radius:10px;color:var(--text);font:inherit;padding:10px 12px}
-    textarea{min-height:76px;resize:vertical}
-    input[type=text]:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none}
-    ::placeholder{color:#6f7788}
-    .btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:800;cursor:pointer;white-space:nowrap}
-    .btn:hover{filter:brightness(1.07)}
-    .btn.ghost{background:var(--raised);color:var(--text);font-weight:700}
-    .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .switch:checked:before{transform:translateX(16px);background:var(--on-accent)}
+    .seg{display:inline-flex;padding:2px;gap:2px;background:var(--sunk);border:1px solid var(--line);border-radius:8px}
+    .seg button{border:0;background:transparent;color:var(--muted);padding:5px 12px;border-radius:6px;font:inherit;font-size:13px;cursor:pointer}
+    .seg button:hover{color:var(--text)}
+    .seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--line-strong)}
+    input[type=text],textarea,select{width:100%;background:var(--sunk);border:1px solid var(--line);border-radius:7px;color:var(--text);font:inherit;font-size:13.5px;padding:8px 10px}
+    textarea{min-height:72px;resize:vertical;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12.5px}
+    input[type=text]:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+    ::placeholder{color:var(--faint)}
+    :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    label.cap{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}
+    .btn{background:var(--accent);color:var(--on-accent);border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+    .btn:hover{filter:brightness(1.08)}
+    .btn.quiet{background:transparent;color:var(--text);box-shadow:inset 0 0 0 1px var(--line-strong);font-weight:500}
+    .btn.quiet:hover{background:var(--raised);filter:none}
     .msg{color:var(--muted);font-size:13px}
+    .stack{padding:14px 18px;display:grid;gap:14px}
+    .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 
     /* Apps */
-    .apps{display:grid;gap:10px}
-    .app{display:grid;grid-template-columns:40px minmax(120px,1.1fr) minmax(110px,.7fr) minmax(120px,1fr) minmax(120px,.8fr) 42px;gap:12px;align-items:center;background:#11141a;border:1px solid var(--line);border-radius:13px;padding:11px 14px}
-    .app .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-weight:900;color:var(--accent-ink);background:var(--hue,var(--accent))}
-    .app strong{display:block;font-size:14px}
-    .app small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
-    .app input[type=text],.app select{padding:8px 10px;font-size:13px;border-radius:9px}
-    .live-note{border:1px solid var(--line);background:#11141a;border-radius:12px;padding:14px 16px;margin-bottom:14px;color:#c3c9d4;font-size:13px}
-    .live-note b{color:var(--text)}
+    .app{display:grid;grid-template-columns:36px minmax(130px,1.1fr) minmax(130px,.8fr) minmax(130px,1fr) minmax(120px,.8fr) 38px;gap:12px;align-items:center;padding:12px 18px}
+    .app+.app{border-top:1px solid var(--line)}
+    .mono-tile{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--raised);display:grid;place-items:center;font-weight:600;font-size:14px}
+    .app strong{display:block;font-weight:600}
+    .app small{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+    .app select,.app input[type=text]{padding:6px 8px;font-size:13px}
+
+    .notice{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);border-radius:8px;padding:14px 18px;margin-bottom:24px}
+    .notice h2{color:var(--text);text-transform:none;letter-spacing:0;font-size:14px;margin-bottom:6px}
+    .notice p{color:var(--muted);font-size:13px;margin-bottom:8px}
+    .notice .inline{margin-top:10px}
+    .note{padding:12px 18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
     code,pre{font:12px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace}
-    code{background:#0b0d12;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:#ffcfa6}
-    pre{margin:0;white-space:pre-wrap;overflow:auto;max-height:200px;background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:12px;color:#b9c1cf}
-    details{margin-top:18px}
-    summary{cursor:pointer;color:var(--muted);font-weight:700;padding:6px 0}
-    .wide{margin-top:18px}
+    code{background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+    pre{margin:0;white-space:pre-wrap;overflow:auto;max-height:210px;background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:12px;color:var(--muted)}
+    details{padding:12px 18px}
+    details+details{border-top:1px solid var(--line)}
+    summary{cursor:pointer;color:var(--muted);font-weight:500;margin-bottom:0}
+    details[open] summary{margin-bottom:10px}
     .hidden{display:none!important}
 
-    @media(max-width:880px){
-      .hero{grid-template-columns:1fr}
-      .app{grid-template-columns:40px 1fr 42px}
+    @media(max-width:860px){
+      .app{grid-template-columns:36px 1fr 38px}
       .app .c3,.app .c4,.app .c5{grid-column:1/-1}
+      .row{flex-wrap:wrap}
     }
     /* Compact layout for the tray popup (?popup=1) */
     html.popup{zoom:.8}
     html.popup main{width:calc(100% - 24px);margin:12px auto 20px}
-    html.popup .top{margin-bottom:14px}
-    html.popup .hero{grid-template-columns:1fr}
-    html.popup .card{padding:16px}
-    html.popup .app{grid-template-columns:40px 1fr 42px}
+    html.popup header{padding-bottom:12px;margin-bottom:16px}
+    html.popup section{margin-bottom:22px}
+    html.popup .app{grid-template-columns:36px 1fr 38px}
     html.popup .app .c3,html.popup .app .c4,html.popup .app .c5{grid-column:1/-1}
-    html.popup body::after{content:"";position:fixed;inset:0;border:1px solid #3a4150;pointer-events:none}
+    html.popup .row{flex-wrap:wrap}
     @media(prefers-reduced-motion:reduce){*{transition:none!important}}
   </style>
 </head>
 <body>
 <main>
-  <div class="top">
-    <div class="brand"><div class="mark">C</div><div><div class="eyebrow">ArtCraft companion</div><h1>CraftPulse</h1></div></div>
-    <span class="chip"><span class="dot" id="status-dot"></span><span id="status">Connecting…</span></span>
+  <header>
+    <div class="wordmark"><h1>CraftPulse</h1><span>Discord presence for ArtCraft</span></div>
+    <span class="status"><span class="dot" id="status-dot"></span><span id="status">Connecting…</span></span>
+  </header>
+
+  <div class="notice hidden" id="first-run">
+    <h2>Turn on smart detection?</h2>
+    <p>With it on, CraftPulse shows exactly what you're doing in each Craft app (the tool, dialog and document or photo) instead of a generic “Editing”. Your Craft apps need to be restarted once.</p>
+    <p>What changes: the apps open a private connection on your computer that CraftPulse reads. It stays on this machine, but other programs on it could also use it, so skip this if you share the computer with software you don't trust.</p>
+    <div class="inline"><button class="btn" id="fr-yes">Turn it on</button><button class="btn quiet" id="fr-no">Not now</button></div>
+  </div>
+  <div class="notice hidden" id="update-note">
+    <h2 id="update-title">Update available</h2>
+    <p>A newer version of CraftPulse is out. Download the new craftpulse.exe from the release page and replace the old one.</p>
+    <div class="inline"><button class="btn" id="update-open">Open release page</button></div>
+  </div>
+  <div class="notice hidden" id="restart-note" style="border-left-color:var(--warn)">
+    <h2>Restart needed</h2>
+    <p id="restart-text" style="margin:0"></p>
   </div>
 
-  <section class="card hidden" id="first-run" style="margin-bottom:18px;border-color:var(--accent)">
-    <h2>Turn on smart detection?</h2>
-    <p class="sub" style="margin-bottom:10px">With it on, CraftPulse shows exactly what you're doing in each Craft app (the tool, dialog and document or photo) instead of a generic “Editing”. Your Craft apps need to be restarted once.</p>
-    <p class="sub">What changes: the apps open a private connection on your computer that CraftPulse reads. It's local only, but other programs on your computer could also use it, so skip this if you share the machine with software you don't trust.</p>
-    <div class="row"><button class="btn" id="fr-yes">Yes, turn it on</button><button class="btn ghost" id="fr-no">Not now</button></div>
-  </section>
-  <section class="card hidden" id="restart-note" style="margin-bottom:18px;border-color:var(--warn)">
-    <h2>Restart needed</h2>
-    <p class="sub" style="margin-bottom:0" id="restart-text"></p>
-  </section>
-  <section class="hero">
-    <div class="card">
-      <h2>On Discord right now</h2>
-      <p class="sub">Exactly what your friends see. It updates by itself as you switch tools, open dialogs or change documents.</p>
-      <div class="discord">
-        <div class="tag">Playing ArtCraft</div>
-        <div class="rp">
-          <div class="art idle" id="art">–</div>
-          <div><b id="preview-title">Nothing yet</b><span id="preview-state">Open a Craft app to start sharing</span><div class="time" id="preview-note"></div></div>
+  <section>
+    <div class="section-head"><div><h2>On Discord now</h2><p>What your friends see. It follows your tools, dialogs and documents on its own.</p></div></div>
+    <div class="panel">
+      <div class="now">
+        <div class="tile" id="art">–</div>
+        <div>
+          <b id="preview-title">Nothing yet</b>
+          <div class="line" id="preview-state">Open a Craft app to start sharing</div>
+          <div class="time" id="preview-note"></div>
         </div>
       </div>
-      <label class="cap" for="test-action">Try a custom activity (shown for 10 seconds)</label>
-      <div class="tester"><input type="text" id="test-action" value="Exporting" maxlength="100"><button class="btn ghost" id="test">Preview</button></div>
-    </div>
-
-    <div class="card">
-      <h2>Presence</h2>
-      <p class="sub">Control what Discord shares while you create.</p>
-      <label class="field"><span><strong>Enable Rich Presence</strong><small>Turn all sharing on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
-      <label class="field"><span><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
-      <label class="field"><span><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
-      <label class="cap" for="action">Fallback activity</label>
-      <input type="text" id="action" maxlength="100" placeholder="Creating">
-      <label class="cap" for="patterns">Hide names matching (regular expressions)</label>
-      <textarea id="patterns" placeholder="One per line, e.g. confidential|client-name"></textarea>
-      <div class="row" style="margin-top:16px"><button class="btn" id="save">Save changes</button><span class="msg" id="message"></span></div>
+      <div class="try">
+        <input type="text" id="test-action" value="Exporting" maxlength="100" aria-label="Custom activity to preview">
+        <button class="btn quiet" id="test">Preview for 10s</button>
+        <button class="btn quiet" id="hide-current" title="Never show the name of the document that is open now">Hide this document</button>
+      </div>
     </div>
   </section>
 
-  <section class="card">
-    <div class="row" style="justify-content:space-between;align-items:flex-start">
-      <div><h2>Apps</h2><p class="sub" style="margin-bottom:0">Each app reports what you’re doing straight from the app, so the status is exact: the tool, dialog, document or photo.</p></div>
-      <button class="btn" id="enable-live" title="Makes the Craft apps start with their control channel on">Turn on live detection</button>
+  <section>
+    <div class="section-head"><div><h2>Presence</h2></div></div>
+    <div class="panel">
+      <label class="row"><span class="grow"><strong>Share my activity</strong><small>Turn everything on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Show extra details</strong><small>Adds things like “Page 3 of 12” or the image size to the document line</small></span><input class="switch" id="details" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Check for updates</strong><small>Looks for new releases on GitHub. Nothing is installed automatically.</small></span><input class="switch" id="updates" type="checkbox"></label>
+      <div class="row"><span class="grow"><strong>Pause sharing</strong><small id="pause-text">Sharing is on</small></span>
+        <div class="seg" id="pause" role="group" aria-label="Pause sharing">
+          <button type="button" data-m="60">1 hour</button><button type="button" data-m="-1">Until I resume</button><button type="button" data-m="0">Resume</button>
+        </div></div>
+      <div class="row"><span class="grow"><strong>Quiet hours</strong><small>Stop sharing automatically during these hours</small></span>
+        <div class="inline"><input type="time" id="quiet-start" aria-label="Quiet hours start" style="width:auto"><span class="muted">to</span><input type="time" id="quiet-end" aria-label="Quiet hours end" style="width:auto"><input class="switch" id="quiet" type="checkbox" aria-label="Enable quiet hours"></div></div>
+      <label class="row"><span class="grow"><strong>Pause while streaming or recording</strong><small>Stops sharing while OBS, Streamlabs, XSplit, Twitch Studio, Zoom screen share or Medal is running</small></span><input class="switch" id="stream-pause" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Milestone notes</strong><small>Now and then adds a short note to the card, like “2h in” or “export #5”</small></span><input class="switch" id="milestones" type="checkbox"></label>
+      <div class="row"><span class="grow"><strong>Elapsed timer</strong><small>Whole session counts from when the app opened. Per document restarts when you switch files.</small></span>
+        <div class="seg" id="timer" role="group" aria-label="Elapsed timer">
+          <button type="button" data-v="off">Off</button><button type="button" data-v="session">Session</button><button type="button" data-v="document">Document</button>
+        </div></div>
+      <div class="row"><span class="grow"><strong>Theme</strong><small>How this page looks</small></span>
+        <div class="seg" id="theme" role="group" aria-label="Theme">
+          <button type="button" data-v="system">System</button><button type="button" data-v="dark">Dark</button><button type="button" data-v="light">Light</button><button type="button" data-v="mono">Mono</button>
+        </div></div>
+      <div class="stack">
+        <div><label class="cap" for="action">Fallback activity</label><input type="text" id="action" maxlength="100" placeholder="Creating"></div>
+        <div><label class="cap" for="patterns">Hide names matching (regular expressions, one per line)</label><textarea id="patterns" placeholder="confidential|client-name"></textarea></div>
+        <div class="inline"><button class="btn" id="save">Save</button><span class="msg" id="message"></span></div>
+      </div>
     </div>
-    <div class="live-note hidden" id="live-note"></div>
-    <div class="apps" id="apps" style="margin-top:16px"></div>
   </section>
 
-  <section class="card wide">
-    <h2>Diagnostics</h2>
-    <details open><summary>Recent events</summary><pre id="log">Loading…</pre></details>
-    <details><summary>System</summary><pre id="diagnostics">Loading…</pre></details>
-    <div class="row" style="margin-top:12px"><button class="btn ghost" id="refresh">Refresh</button></div>
+  <section>
+    <div class="section-head"><div><h2>Card</h2><p>Shape the text and add up to two link buttons.</p></div></div>
+    <div class="panel"><div class="stack">
+      <div><label class="cap" for="details-template">Top line</label><input type="text" id="details-template" maxlength="200" placeholder="{document}"></div>
+      <div><label class="cap" for="state-template">Second line</label><input type="text" id="state-template" maxlength="200" placeholder="in {app} — {activity}"></div>
+      <p class="muted" style="font-size:12.5px">Placeholders: <code>{app}</code> <code>{activity}</code> <code>{document}</code> <code>{detail}</code>. Leave empty to restore the default.</p>
+      <div><label class="cap">Buttons (label and https link)</label>
+        <div class="inline" style="margin-bottom:8px"><input type="text" id="b1-label" maxlength="32" placeholder="Label" style="flex:1"><input type="text" id="b1-url" placeholder="https://…" style="flex:2"></div>
+        <div class="inline"><input type="text" id="b2-label" maxlength="32" placeholder="Label" style="flex:1"><input type="text" id="b2-url" placeholder="https://…" style="flex:2"></div>
+      </div>
+      <div class="inline"><button class="btn" id="save-card">Save</button><button class="btn quiet" id="layout-export">Export layout</button><button class="btn quiet" id="layout-import">Import layout</button><input type="file" id="layout-file" accept="application/json,.json" class="hidden"><span class="msg" id="card-message"></span></div>
+    </div></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>Recent activity</h2><p>What your card has shown since CraftPulse started. Not saved to disk.</p></div></div>
+    <div class="panel"><div id="history"></div></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>Time in apps</h2><p>Kept only on this computer. Counts the time you're active in each app.</p></div><button class="btn quiet" id="stats-clear">Clear</button></div>
+    <div class="panel"><div id="stats"></div></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div><h2>Apps</h2><p>With smart detection, each app reports what you're doing straight from the app.</p></div>
+      <button class="btn quiet" id="enable-live">Turn on smart detection</button>
+    </div>
+    <div class="panel">
+      <div class="apps" id="apps"></div>
+      <div class="note hidden" id="live-note"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>Diagnostics</h2></div><button class="btn quiet" id="refresh">Refresh</button></div>
+    <div class="panel">
+      <details open><summary>Recent events</summary><pre id="log">Loading…</pre></details>
+      <details><summary>System</summary><pre id="diagnostics">Loading…</pre></details>
+    </div>
   </section>
 </main>
 <script>
@@ -170,29 +261,34 @@ if(new URLSearchParams(location.search).has("popup"))document.documentElement.cl
 const token=new URLSearchParams(location.search).get("token")||"";
 const headers={"Content-Type":"application/json","X-CraftPulse-Token":token};
 const $=id=>document.getElementById(id);
-const HUES={PhotoCraft:"#ff9a52",VectorCraft:"#7ad7b3",FilmCraft:"#ff7a8a",LightCraft:"#ffd166",PdfCraft:"#ff8f6b",EffectCraft:"#b392ff",DesignCraft:"#6fc3ff"};
-let config={},live={},saving=false;
+let config={},live={};
 async function call(path,options={}){const r=await fetch(path,{...options,headers:{...headers,...options.headers}});if(!r.ok)throw new Error(await r.text());return r.json()}
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function setStatus(text,kind){$("status").textContent=text;$("status-dot").className="dot "+(kind||"")}
 
+/* Segmented controls: one function drives both the timer and the theme. */
+function setSeg(id,value){document.querySelectorAll("#"+id+" button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===value)))}
+function applyTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem("cp-theme",t)}catch(e){}}
+document.querySelectorAll("#timer button").forEach(b=>b.onclick=()=>{config.timer_mode=b.dataset.v;setSeg("timer",config.timer_mode);save()});
+document.querySelectorAll("#theme button").forEach(b=>b.onclick=()=>{config.theme=b.dataset.v;setSeg("theme",config.theme);applyTheme(config.theme);save()});
+
 function liveLabel(name,app){
   const s=live[name];
   if(!app.enabled)return['','Paused'];
-  if(!app.live)return['','Window detection'];
+  if(!app.live)return['','Window detection only'];
   if(!s)return['','Checking…'];
-  return s.reachable?['ok','Live detection']:['warn','Waiting for the app'];
+  return s.reachable?['ok','Smart detection']:['warn','Waiting for the app'];
 }
 function drawApps(){
   const entries=Object.entries(config.apps||{});
   $("apps").innerHTML=entries.map(([name,app])=>{
-    const n=esc(name),[kind,label]=liveLabel(name,app),hue=HUES[name]||"#ff8a3d";
-    return `<div class="app" style="--hue:${hue}">
-      <div class="ic">${esc(name[0]||"A")}</div>
+    const n=esc(name),[kind,label]=liveLabel(name,app);
+    return `<div class="app">
+      <div class="mono-tile">${esc(name[0]||"A")}</div>
       <div><strong>${n}</strong><small><span class="dot ${kind}"></span>${label}</small></div>
       <div class="c3"><select aria-label="Privacy for ${n}" data-app="${n}" class="app-hide"><option value="inherit" ${app.hide_project_name==null?"selected":""}>Privacy: default</option><option value="hidden" ${app.hide_project_name===true?"selected":""}>Always hide name</option><option value="visible" ${app.hide_project_name===false?"selected":""}>Show name</option></select></div>
-      <div class="c4"><input type="text" class="app-action" data-app="${n}" aria-label="Fixed activity for ${n}" maxlength="100" value="${esc(app.action||"")}" placeholder="Auto: what you’re doing"></div>
-      <div class="c5"><select aria-label="Detection for ${n}" data-app="${n}" class="app-live"><option value="live" ${app.live?"selected":""}>Live + window</option><option value="window" ${!app.live?"selected":""}>Window only</option></select></div>
+      <div class="c4"><input type="text" class="app-action" data-app="${n}" aria-label="Fixed activity for ${n}" maxlength="100" value="${esc(app.action||"")}" placeholder="Automatic"></div>
+      <div class="c5"><select aria-label="Detection for ${n}" data-app="${n}" class="app-live"><option value="live" ${app.live?"selected":""}>Smart + window</option><option value="window" ${!app.live?"selected":""}>Window only</option></select></div>
       <input class="switch app-switch" aria-label="Enable ${n}" data-app="${n}" type="checkbox" ${app.enabled?"checked":""}>
     </div>`;
   }).join("");
@@ -202,24 +298,45 @@ function drawApps(){
   on(".app-action",e=>{config.apps[e.target.dataset.app].action=e.target.value.trim()||null;save()});
   on(".app-live",e=>{config.apps[e.target.dataset.app].live=e.target.value==="live";save()});
 }
-function drawPreview(card){
-  const art=$("art");
-  if(!card){art.textContent="–";art.className="art idle";$("preview-title").textContent="Nothing yet";$("preview-state").textContent="Open a Craft app to start sharing";$("preview-note").textContent="";return}
-  art.textContent=(card.app_name||"A")[0];art.className="art";
-  art.style.background=`linear-gradient(145deg,${HUES[card.app_name]||"#ff9a52"},#e5602a)`;
-  $("preview-title").textContent=card.document;$("preview-state").textContent=card.state;$("preview-note").textContent="● Live";
+function hm(sec){const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h?h+"h "+m+"m":(m?m+"m":(sec?"<1m":"–"))}
+function drawStats(st){
+  const names=Object.keys(st.week||{}).sort((a,b)=>st.week[b]-st.week[a]);
+  $("stats").innerHTML=names.length?`<div class="app" style="grid-template-columns:1fr 100px 100px;padding:10px 18px;color:var(--faint);font-size:12px"><span>App</span><span class="num">Today</span><span class="num">7 days</span></div>`+names.map(n=>`<div class="app" style="grid-template-columns:1fr 100px 100px"><strong>${esc(n)}</strong><span class="num">${hm(st.today[n]||0)}</span><span class="num">${hm(st.week[n])}</span></div>`).join(""):`<div class="note" style="border-top:0">Nothing recorded yet. Use a Craft app for a minute and it will show up here.</div>`;
 }
+function drawHistory(list){
+  $("history").innerHTML=list.length?list.slice(0,12).map(e=>`<div class="app" style="grid-template-columns:70px 110px 1fr"><span class="num muted">${new Date(e.at*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span><strong>${esc(e.app)}</strong><span>${esc(e.activity)} <span class="muted">· ${esc(e.document)}</span></span></div>`).join(""):`<div class="note" style="border-top:0">Nothing yet. Open a Craft app and it will show up here.</div>`;
+}
+function drawPreview(card){
+  const note=$("preview-note");
+  if(!card){$("art").textContent="–";$("preview-title").textContent="Nothing yet";$("preview-state").textContent="Open a Craft app to start sharing";note.textContent="";return}
+  $("art").textContent=(card.app_name||"A")[0];
+  $("preview-title").textContent=card.document;$("preview-state").textContent=card.state;
+  note.innerHTML=card.started_at?`<span class="live num" data-start="${card.started_at}"></span>`:"";
+  tick();
+}
+function fmt(sec){sec=Math.max(0,sec|0);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return (h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s).padStart(2,"0")+" elapsed"}
+function tick(){document.querySelectorAll("[data-start]").forEach(n=>n.textContent=fmt(Date.now()/1000-Number(n.dataset.start)))}
+setInterval(tick,1000);
+
 async function load(){
   config=await call("/api/settings");
-  $("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;
+  $("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;$("details").checked=config.show_details!==false;$("updates").checked=config.check_updates!==false;
   $("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");
-  drawApps();$("first-run").classList.toggle("hidden",!!config.live_prompted);setStatus("Running locally","ok");await refresh();
+  $("quiet").checked=!!config.quiet_hours;$("quiet-start").value=config.quiet_start||"22:00";$("quiet-end").value=config.quiet_end||"07:00";$("stream-pause").checked=!!config.pause_while_streaming;$("milestones").checked=!!config.milestones;
+  $("details-template").value=config.details_template||"";$("state-template").value=config.state_template||"";
+  const bs=config.buttons||[];[1,2].forEach(i=>{$("b"+i+"-label").value=(bs[i-1]||{}).label||"";$("b"+i+"-url").value=(bs[i-1]||{}).url||""});
+  setSeg("timer",config.timer_mode||"session");setSeg("theme",config.theme||"system");applyTheme(config.theme||"system");
+  drawApps();$("first-run").classList.toggle("hidden",!!config.live_prompted);
+  setStatus("Running","ok");await refresh();
 }
 async function save(){
-  config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;
+  config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;config.show_details=$("details").checked;config.check_updates=$("updates").checked;
+  config.quiet_hours=$("quiet").checked;config.quiet_start=$("quiet-start").value||"22:00";config.quiet_end=$("quiet-end").value||"07:00";config.pause_while_streaming=$("stream-pause").checked;config.milestones=$("milestones").checked;
+  config.details_template=$("details-template").value;config.state_template=$("state-template").value;
+  config.buttons=[1,2].map(i=>({label:$("b"+i+"-label").value.trim(),url:$("b"+i+"-url").value.trim()})).filter(b=>b.label||b.url);
   config.action=$("action").value;config.hide_patterns=$("patterns").value.split("\n").map(x=>x.trim()).filter(Boolean);
-  try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";setTimeout(()=>$("message").textContent="",1800);drawApps()}
-  catch(err){$("message").textContent=err.message;setStatus("Could not save","bad")}
+  try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";$("card-message").textContent="Saved";setTimeout(()=>{$("message").textContent="";$("card-message").textContent=""},1800);drawApps()}
+  catch(err){$("message").textContent=err.message;$("card-message").textContent=err.message;setStatus("Could not save","bad")}
 }
 async function refresh(){
   try{
@@ -228,8 +345,15 @@ async function refresh(){
     $("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet.";
     const lv=await call("/api/live");live={};lv.apps.forEach(s=>live[s.name]=s);
     $("restart-note").classList.toggle("hidden",!lv.restart_needed.length);
-    $("restart-text").textContent=lv.restart_needed.join(", ")+" was opened before smart detection was on. Close it and open it again once, and CraftPulse will show what you're doing.";if(!$("apps").contains(document.activeElement)||document.activeElement.tagName==="BODY")drawApps();
-    setStatus("Running locally","ok");
+    $("restart-text").textContent=lv.restart_needed.join(", ")+" was opened before smart detection was on. Close it and open it again once, and CraftPulse will show what you're doing.";
+    if(!$("apps").contains(document.activeElement)||document.activeElement.tagName==="BODY")drawApps();
+    const pz=await call("/api/pause");
+    $("pause-text").textContent=pz.auto?"Paused automatically: "+pz.auto:!pz.paused?"Sharing is on":(pz.until>4e12?"Paused until you resume":"Paused until "+new Date(pz.until*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}));
+    const st=await call("/api/stats");drawStats(st);drawHistory(await call("/api/history"));
+    const up=await call("/api/update");
+    $("update-note").classList.toggle("hidden",!up.available);
+    if(up.available)$("update-title").textContent="Update available: "+up.available.version.replace(/^CraftPulse-/,"");
+    setStatus("Running","ok");
   }catch(err){setStatus("Local connection error","bad");$("diagnostics").textContent=err.message}
 }
 $("enable-live").onclick=async()=>{
@@ -238,17 +362,43 @@ $("enable-live").onclick=async()=>{
     const r=await call("/api/live/enable",{method:"POST",body:"{}"});
     const lines=r.lines.map(l=>`<code>${esc(l)}</code>`).join(" ");
     note.innerHTML=r.applied
-      ?`<b>Done.</b> Close and reopen your Craft apps once. After that CraftPulse shows exactly what you’re doing, including the photo name in LightCraft without opening the Info tab. PdfCraft has no setting for this: start it with <code>pdfcraft --control "%USERPROFILE%\\.pdfcraft-control.json"</code>.`
-      :`<b>Add these to your environment</b> (this platform can’t set them for you), then restart the apps: ${lines}`;
+      ?`Done. Close and reopen your Craft apps once. After that CraftPulse shows exactly what you're doing, including the photo name in LightCraft without opening the Info tab. PdfCraft has no setting for this: start it with <code>pdfcraft --control "%USERPROFILE%\\.pdfcraft-control.json"</code>.`
+      :`Add these to your environment (this system can't set them for you), then restart the apps: ${lines}`;
   }catch(err){note.textContent=err.message}
 };
 async function answerFirstRun(yes){
-  if(yes){try{await call("/api/live/enable",{method:"POST",body:"{}"});$("live-note").classList.remove("hidden");$("live-note").innerHTML="<b>Done.</b> Close and reopen your Craft apps once.";}catch(e){}}
+  if(yes){try{await call("/api/live/enable",{method:"POST",body:"{}"});const n=$("live-note");n.classList.remove("hidden");n.textContent="Done. Close and reopen your Craft apps once."}catch(e){}}
   config.live_prompted=true;$("first-run").classList.add("hidden");await save();
 }
 $("fr-yes").onclick=()=>answerFirstRun(true);$("fr-no").onclick=()=>answerFirstRun(false);
+document.querySelectorAll("#pause button").forEach(b=>b.onclick=async()=>{const m=Number(b.dataset.m);await call("/api/pause",{method:"POST",body:JSON.stringify({minutes:m<0?null:m})});refresh()});
+$("save-card").onclick=save;
+$("stats-clear").onclick=async()=>{await call("/api/stats/clear",{method:"POST",body:"{}"});refresh()};
+$("hide-current").onclick=async()=>{const r=await call("/api/hide-current",{method:"POST",body:"{}"});$("preview-note").textContent=r.hidden?"Hidden: "+r.hidden:"Open a document first";await load()};
+$("layout-export").onclick=()=>{
+  const keys=["details_template","state_template","buttons","timer_mode","theme","show_details","milestones"];
+  const out={craftpulse_layout:1};keys.forEach(k=>out[k]=config[k]);
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:"application/json"}));a.download="craftpulse-layout.json";a.click();URL.revokeObjectURL(a.href);
+};
+$("layout-import").onclick=()=>$("layout-file").click();
+$("layout-file").onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{
+    const data=JSON.parse(await file.text());
+    if(data.craftpulse_layout!==1)throw new Error("This isn't a CraftPulse layout file");
+    const str=["details_template","state_template"],bool=["show_details","milestones"];
+    str.forEach(k=>{if(typeof data[k]==="string")config[k]=data[k].slice(0,200)});
+    bool.forEach(k=>{if(typeof data[k]==="boolean")config[k]=data[k]});
+    if(["off","session","document"].includes(data.timer_mode))config.timer_mode=data.timer_mode;
+    if(["system","dark","light","mono"].includes(data.theme))config.theme=data.theme;
+    if(Array.isArray(data.buttons))config.buttons=data.buttons.slice(0,2).map(b=>({label:String(b.label||"").slice(0,32),url:String(b.url||"")}));
+    await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});await load();$("card-message").textContent="Layout imported";
+  }catch(err){$("card-message").textContent=err.message}
+  e.target.value="";
+};
+$("update-open").onclick=()=>call("/api/update/open",{method:"POST",body:"{}"});
 $("save").onclick=save;$("refresh").onclick=refresh;
-["enabled","hide","launch"].forEach(id=>$(id).addEventListener("change",save));
+["enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
 $("test").onclick=async()=>{const r=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});drawPreview(r)};
 load().catch(e=>{setStatus("Local connection error","bad");$("diagnostics").textContent=e.message});
 setInterval(()=>{if(!document.hidden)refresh()},4000);

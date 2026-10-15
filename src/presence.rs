@@ -1,5 +1,5 @@
 use discord_rich_presence::{
-    activity::{Activity, Assets},
+    activity::{Activity, Assets, Button, Timestamps},
     DiscordIpc, DiscordIpcClient,
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,12 @@ pub struct PresenceCard {
     pub state: String,
     pub large_image_key: String,
     pub small_image_key: String,
+    /// Unix seconds the elapsed timer counts from (`None`: no timer).
+    #[serde(default)]
+    pub started_at: Option<i64>,
+    /// (label, https url) link buttons, at most two.
+    #[serde(default)]
+    pub buttons: Vec<(String, String)>,
 }
 
 enum Command {
@@ -78,7 +84,7 @@ fn run_rpc(receiver: Receiver<Command>) {
         match command {
             Command::Set(card, response) => {
                 let activity = || {
-                    Activity::new()
+                    let activity = Activity::new()
                         .details(&card.document)
                         .state(&card.state)
                         .assets(
@@ -86,7 +92,22 @@ fn run_rpc(receiver: Receiver<Command>) {
                                 .large_image(&card.large_image_key)
                                 .large_text(&card.app_name)
                                 .small_image(&card.small_image_key),
+                        );
+                    let activity = match card.started_at {
+                        Some(start) => activity.timestamps(Timestamps::new().start(start)),
+                        None => activity,
+                    };
+                    if card.buttons.is_empty() {
+                        activity
+                    } else {
+                        activity.buttons(
+                            card.buttons
+                                .iter()
+                                .take(2)
+                                .map(|(label, url)| Button::new(label, url))
+                                .collect(),
                         )
+                    }
                 };
                 // A refreshed or restarted Discord leaves us holding a dead
                 // pipe. Try the existing connection first, then reconnect once.
@@ -136,6 +157,8 @@ mod tests {
             state: "in PhotoCraft — Editing".into(),
             large_image_key: "photocraft".into(),
             small_image_key: "artcraft".into(),
+            started_at: None,
+            buttons: Vec::new(),
         };
         assert!(card.state.contains("Editing"));
         assert_eq!(card.app_name, "PhotoCraft");

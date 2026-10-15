@@ -8,6 +8,9 @@ use std::{
 };
 use toml_edit::{de, value, DocumentMut};
 
+pub const DEFAULT_DETAILS_TEMPLATE: &str = "{document}";
+pub const DEFAULT_STATE_TEMPLATE: &str = "in {app} — {activity}";
+
 pub type SharedConfig = Arc<Mutex<Config>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -21,6 +24,28 @@ pub struct Config {
     pub launch_at_login: bool,
     /// The first-run question about live detection has been answered.
     pub live_prompted: bool,
+    /// Elapsed-time display on the Discord card: "off", "session" or "document".
+    pub timer_mode: String,
+    /// Look for newer releases on GitHub.
+    pub check_updates: bool,
+    /// Add extras like "Page 3 of 12" or image size to the document line.
+    pub show_details: bool,
+    /// Up to two link buttons on the card.
+    pub buttons: Vec<CardButton>,
+    /// Stop sharing between `quiet_start` and `quiet_end` (24h "HH:MM", may cross midnight).
+    pub quiet_hours: bool,
+    pub quiet_start: String,
+    pub quiet_end: String,
+    /// Stop sharing while a streaming or recording app is running.
+    pub pause_while_streaming: bool,
+    /// Occasional notes on the card ("2h in", "export #5").
+    pub milestones: bool,
+    /// Text of the top line. Placeholders: {app} {activity} {document} {detail}.
+    pub details_template: String,
+    /// Text of the second line. Same placeholders.
+    pub state_template: String,
+    /// Settings page look: "system", "dark", "light" or "mono".
+    pub theme: String,
     pub apps: BTreeMap<String, AppConfig>,
     pub rules: Vec<ActivityRule>,
     #[serde(skip)]
@@ -29,6 +54,25 @@ pub struct Config {
 
 /// Shows `activity` while the button/tab whose name starts with `element`
 /// is selected in `app`. Add these under `[[rules]]` in config.toml.
+/// A link button on the Discord card (Discord allows two, https only).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CardButton {
+    pub label: String,
+    pub url: String,
+}
+
+impl CardButton {
+    /// Discord's limits: a short label and an https link.
+    pub fn is_valid(&self) -> bool {
+        let label = self.label.trim();
+        !label.is_empty()
+            && label.chars().count() <= 32
+            && self.url.len() <= 512
+            && self.url.starts_with("https://")
+            && !self.url.contains(char::is_whitespace)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ActivityRule {
     pub app: String,
@@ -81,6 +125,18 @@ impl Default for Config {
             application_id: "1558510318513033329".to_string(),
             launch_at_login: false,
             live_prompted: false,
+            timer_mode: "session".to_string(),
+            check_updates: true,
+            show_details: true,
+            buttons: Vec::new(),
+            quiet_hours: false,
+            quiet_start: "22:00".to_string(),
+            quiet_end: "07:00".to_string(),
+            pause_while_streaming: false,
+            milestones: false,
+            details_template: DEFAULT_DETAILS_TEMPLATE.to_string(),
+            state_template: DEFAULT_STATE_TEMPLATE.to_string(),
+            theme: "system".to_string(),
             apps,
             rules: Vec::new(),
             last_modified: None,
@@ -233,6 +289,37 @@ impl Config {
             value(self.launch_at_login),
         );
         set_value(&mut document["live_prompted"], value(self.live_prompted));
+        set_value(&mut document["timer_mode"], value(self.timer_mode.clone()));
+        set_value(&mut document["theme"], value(self.theme.clone()));
+        set_value(&mut document["check_updates"], value(self.check_updates));
+        set_value(&mut document["show_details"], value(self.show_details));
+        set_value(
+            &mut document["details_template"],
+            value(self.details_template.clone()),
+        );
+        set_value(
+            &mut document["state_template"],
+            value(self.state_template.clone()),
+        );
+        set_value(&mut document["quiet_hours"], value(self.quiet_hours));
+        set_value(
+            &mut document["quiet_start"],
+            value(self.quiet_start.clone()),
+        );
+        set_value(&mut document["quiet_end"], value(self.quiet_end.clone()));
+        set_value(
+            &mut document["pause_while_streaming"],
+            value(self.pause_while_streaming),
+        );
+        set_value(&mut document["milestones"], value(self.milestones));
+        let mut buttons = toml_edit::Array::new();
+        for button in &self.buttons {
+            let mut entry = toml_edit::InlineTable::new();
+            entry.insert("label", button.label.as_str().into());
+            entry.insert("url", button.url.as_str().into());
+            buttons.push(entry);
+        }
+        set_value(&mut document["buttons"], value(buttons));
         let mut patterns = toml_edit::Array::new();
         for pattern in &self.hide_patterns {
             patterns.push(pattern.as_str());
@@ -383,6 +470,43 @@ mod tests {
         )
         .unwrap();
         assert_eq!(parsed.rules.len(), 1);
+    }
+
+    #[test]
+    fn timer_and_theme_have_defaults_and_old_files_still_load() {
+        let config = Config::default();
+        assert_eq!(config.timer_mode, "session");
+        assert_eq!(config.theme, "system");
+        let parsed: Config = de::from_str("enabled = true\n").unwrap();
+        assert_eq!(parsed.timer_mode, "session");
+    }
+
+    #[test]
+    fn buttons_round_trip_and_validate() {
+        let path =
+            std::env::temp_dir().join(format!("craftpulse-buttons-{}.toml", std::process::id()));
+        let config = Config {
+            buttons: vec![CardButton {
+                label: "Portfolio".into(),
+                url: "https://example.com/me".into(),
+            }],
+            ..Config::default()
+        };
+        config.save_to(&path).unwrap();
+        let loaded: Config = de::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.buttons, config.buttons);
+        let _ = fs::remove_file(path);
+        assert!(config.buttons[0].is_valid());
+        assert!(!CardButton {
+            label: "x".into(),
+            url: "http://example.com".into()
+        }
+        .is_valid());
+        assert!(!CardButton {
+            label: "".into(),
+            url: "https://example.com".into()
+        }
+        .is_valid());
     }
 
     #[test]

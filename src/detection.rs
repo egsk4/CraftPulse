@@ -26,6 +26,8 @@ pub struct ProcessDetector {
     pub activity: Option<String>,
     /// True when there has been no keyboard or mouse input for a while.
     pub idle: bool,
+    /// A streaming or recording app (OBS and similar) is running.
+    pub streaming: bool,
     /// Raw visible window titles of the chosen app (for the activity log).
     pub titles: Vec<String>,
     uia_pid: Option<u32>,
@@ -51,9 +53,11 @@ impl ProcessDetector {
         self.system.refresh_processes(ProcessesToUpdate::All, true);
         let mut active: Vec<Candidate> = Vec::new();
         let mut unknown: Vec<String> = Vec::new();
+        let mut streaming = false;
         for process in self.system.processes().values() {
             let process_name = process.name().to_string_lossy();
             let lower_name = process_name.to_lowercase();
+            streaming |= is_streaming_process(&lower_name);
             if !supported
                 .iter()
                 .any(|candidate| process_matches(&process_name, candidate))
@@ -94,6 +98,7 @@ impl ProcessDetector {
         } else {
             newest_candidate(&active, &self.previous)
         };
+        self.streaming = streaming;
         unknown.sort();
         unknown.dedup();
         self.unknown = unknown;
@@ -186,6 +191,25 @@ impl ProcessDetector {
             }
         }
     }
+}
+
+/// Streaming and screen-recording apps that mean an audience may be watching.
+const STREAMING_PROCESSES: [&str; 8] = [
+    "obs64",
+    "obs32",
+    "obs",
+    "streamlabs",
+    "xsplit.core",
+    "twitch studio",
+    "cpthost",
+    "medal",
+];
+
+fn is_streaming_process(lower_name: &str) -> bool {
+    let name = lower_name.strip_suffix(".exe").unwrap_or(lower_name);
+    STREAMING_PROCESSES
+        .iter()
+        .any(|candidate| name == *candidate || name.starts_with("streamlabs"))
 }
 
 fn newest_candidate<'a>(
@@ -766,6 +790,14 @@ pub fn strip_title(title: &str, app_name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognises_streaming_apps() {
+        assert!(is_streaming_process("obs64.exe"));
+        assert!(is_streaming_process("streamlabs desktop.exe"));
+        assert!(!is_streaming_process("photocraft.exe"));
+        assert!(!is_streaming_process("obsidian.exe"));
+    }
 
     #[test]
     fn matches_process_with_or_without_extension() {

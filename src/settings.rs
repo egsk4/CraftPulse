@@ -1,5 +1,8 @@
 use crate::{
-    config::{AppConfig, Config, SharedConfig},
+    config::{
+        AppConfig, CardButton, Config, SharedConfig, DEFAULT_DETAILS_TEMPLATE,
+        DEFAULT_STATE_TEMPLATE,
+    },
     presence::PresenceCard,
     startup,
 };
@@ -21,6 +24,18 @@ struct SettingsUpdate {
     action: Option<String>,
     launch_at_login: Option<bool>,
     live_prompted: Option<bool>,
+    timer_mode: Option<String>,
+    theme: Option<String>,
+    check_updates: Option<bool>,
+    show_details: Option<bool>,
+    buttons: Option<Vec<CardButton>>,
+    quiet_hours: Option<bool>,
+    quiet_start: Option<String>,
+    quiet_end: Option<String>,
+    pause_while_streaming: Option<bool>,
+    milestones: Option<bool>,
+    details_template: Option<String>,
+    state_template: Option<String>,
     apps: Option<std::collections::BTreeMap<String, AppConfig>>,
 }
 
@@ -32,6 +47,18 @@ struct SettingsResponse {
     action: String,
     launch_at_login: bool,
     live_prompted: bool,
+    timer_mode: String,
+    theme: String,
+    check_updates: bool,
+    show_details: bool,
+    buttons: Vec<CardButton>,
+    quiet_hours: bool,
+    quiet_start: String,
+    quiet_end: String,
+    pause_while_streaming: bool,
+    milestones: bool,
+    details_template: String,
+    state_template: String,
     apps: std::collections::BTreeMap<String, AppConfig>,
 }
 
@@ -116,6 +143,18 @@ fn handle_request(
                 action: config.action.clone(),
                 launch_at_login: config.launch_at_login,
                 live_prompted: config.live_prompted,
+                timer_mode: config.timer_mode.clone(),
+                theme: config.theme.clone(),
+                check_updates: config.check_updates,
+                show_details: config.show_details,
+                buttons: config.buttons.clone(),
+                quiet_hours: config.quiet_hours,
+                quiet_start: config.quiet_start.clone(),
+                quiet_end: config.quiet_end.clone(),
+                pause_while_streaming: config.pause_while_streaming,
+                milestones: config.milestones,
+                details_template: config.details_template.clone(),
+                state_template: config.state_template.clone(),
                 apps: config.apps.clone(),
             })
             .unwrap_or_else(|_| "{}".to_string());
@@ -146,7 +185,57 @@ fn handle_request(
                         .with_status_code(StatusCode(400));
                 }
             }
+            if let Some(buttons) = &update.buttons {
+                if buttons.len() > 2 {
+                    return Response::from_string("Discord allows at most two buttons")
+                        .with_status_code(StatusCode(400));
+                }
+                if let Some(bad) = buttons.iter().find(|button| !button.is_valid()) {
+                    return Response::from_string(format!(
+                        "Button “{}” needs a label of up to 32 characters and a link starting with https://",
+                        bad.label
+                    ))
+                    .with_status_code(StatusCode(400));
+                }
+            }
+            for time in [&update.quiet_start, &update.quiet_end].into_iter().flatten() {
+                if crate::quiet::parse_hhmm(time).is_none() {
+                    return Response::from_string("Quiet hours need times like 22:00")
+                        .with_status_code(StatusCode(400));
+                }
+            }
             let mut config = config.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(value) = update.quiet_hours {
+                config.quiet_hours = value;
+            }
+            if let Some(value) = update.quiet_start {
+                config.quiet_start = value.trim().to_string();
+            }
+            if let Some(value) = update.quiet_end {
+                config.quiet_end = value.trim().to_string();
+            }
+            if let Some(value) = update.pause_while_streaming {
+                config.pause_while_streaming = value;
+            }
+            if let Some(value) = update.milestones {
+                config.milestones = value;
+            }
+            if let Some(value) = update.buttons {
+                config.buttons = value
+                    .into_iter()
+                    .map(|b| CardButton { label: b.label.trim().to_string(), url: b.url.trim().to_string() })
+                    .collect();
+            }
+            let template = |value: String, default: &str| {
+                let value: String = value.chars().take(200).collect();
+                if value.trim().is_empty() { default.to_string() } else { value }
+            };
+            if let Some(value) = update.details_template {
+                config.details_template = template(value, DEFAULT_DETAILS_TEMPLATE);
+            }
+            if let Some(value) = update.state_template {
+                config.state_template = template(value, DEFAULT_STATE_TEMPLATE);
+            }
             if let Some(value) = update.enabled {
                 config.enabled = value;
             }
@@ -164,6 +253,18 @@ fn handle_request(
             }
             if let Some(value) = update.live_prompted {
                 config.live_prompted = value;
+            }
+            if let Some(value) = update
+                .timer_mode
+                .filter(|v| matches!(v.as_str(), "off" | "session" | "document"))
+            {
+                config.timer_mode = value;
+            }
+            if let Some(value) = update
+                .theme
+                .filter(|v| matches!(v.as_str(), "system" | "dark" | "light" | "mono"))
+            {
+                config.theme = value;
             }
             if let Some(value) = update.apps {
                 config.apps = value
@@ -216,6 +317,69 @@ fn handle_request(
             let (applied, lines) = crate::control::enable_environment(&config, &names);
             json_response(serde_json::json!({"applied": applied, "lines": lines}).to_string())
         }
+        (&Method::Get, "/api/pause") => json_response(
+            serde_json::json!({"paused": crate::pause::is_paused(), "until": crate::pause::until(), "auto": crate::pause::auto()}).to_string(),
+        ),
+        (&Method::Get, "/api/history") => json_response(
+            serde_json::to_string(&crate::history::entries()).unwrap_or_else(|_| "[]".to_string()),
+        ),
+        (&Method::Post, "/api/hide-current") => {
+            let Some((_, document)) = crate::history::current() else {
+                return json_response(serde_json::json!({"hidden": null}).to_string());
+            };
+            let pattern = format!("^{}$", regex::escape(&document));
+            let mut config = config.lock().unwrap_or_else(|e| e.into_inner());
+            if !config.hide_patterns.contains(&pattern) {
+                config.hide_patterns.push(pattern);
+            }
+            if let Err(error) = config.save() {
+                return Response::from_string(error).with_status_code(StatusCode(500));
+            }
+            json_response(serde_json::json!({"hidden": document}).to_string())
+        }
+        (&Method::Post, "/api/pause") => {
+            let mut body = String::new();
+            let _ = request.as_reader().take(1024).read_to_string(&mut body);
+            let minutes = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v.get("minutes").and_then(|m| m.as_i64()));
+            match minutes {
+                Some(0) => crate::pause::resume(),
+                Some(minutes) if minutes > 0 => crate::pause::pause_for_minutes(minutes),
+                _ => crate::pause::pause_until_resumed(),
+            }
+            json_response(
+                serde_json::json!({"paused": crate::pause::is_paused(), "until": crate::pause::until()}).to_string(),
+            )
+        }
+        (&Method::Get, "/api/stats") => {
+            let today = crate::stats::day_of(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0),
+            );
+            let (today_totals, week_totals) = crate::stats::summary(today);
+            json_response(serde_json::json!({"today": today_totals, "week": week_totals}).to_string())
+        }
+        (&Method::Post, "/api/stats/clear") => {
+            crate::stats::clear();
+            json_response("{}".to_string())
+        }
+        (&Method::Get, "/api/update") => json_response(
+            serde_json::json!({
+                "current": crate::update::current_version(),
+                "available": crate::update::available(),
+            })
+            .to_string(),
+        ),
+        (&Method::Post, "/api/update/open") => {
+            // Only ever opens the release page found by the update checker.
+            if let Some(found) = crate::update::available() {
+                let _ = open::that(found.url);
+            }
+            json_response("{}".to_string())
+        }
         (&Method::Get, "/api/log") => {
             let entries = log.lock().unwrap_or_else(|e| e.into_inner()).clone();
             json_response(serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string()))
@@ -236,6 +400,8 @@ fn handle_request(
                 ),
                 large_image_key: "photocraft".to_string(),
                 small_image_key: "artcraft".to_string(),
+                started_at: None,
+                buttons: Vec::new(),
             };
             *preview.lock().unwrap_or_else(|e| e.into_inner()) = Some(card.clone());
             *test_request.lock().unwrap_or_else(|e| e.into_inner()) = Some(card.clone());

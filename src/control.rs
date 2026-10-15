@@ -194,6 +194,8 @@ pub struct LiveState {
     pub busy: Option<String>,
     /// Playback or preview is running.
     pub playing: bool,
+    /// Extra info for the document line ("Page 3 of 12", "6000×4000").
+    pub detail: Option<String>,
 }
 
 impl LiveState {
@@ -357,7 +359,7 @@ pub struct ControlClient {
     last_document: Option<Instant>,
     state: Option<LiveState>,
     /// Document name cache: (key it was read for, name).
-    document_cache: Option<(String, Option<String>)>,
+    document_cache: Option<(String, Option<String>, Option<String>)>,
     last_failure: String,
     described: bool,
     logs: Vec<String>,
@@ -567,27 +569,33 @@ impl ControlClient {
             ));
         }
         if state.document.is_none() {
-            state.document = self.document_name(&app, &result);
+            let (name, detail) = self.document_name(&app, &result);
+            state.document = name;
+            if detail.is_some() {
+                state.detail = detail;
+            }
         }
         Ok(state)
     }
 
     /// Reads the open document's name for apps whose `ui.inspect` doesn't
     /// carry it. Cached, and only re-read when something changes.
-    fn document_name(&mut self, app: &str, inspect: &Value) -> Option<String> {
+    fn document_name(&mut self, app: &str, inspect: &Value) -> (Option<String>, Option<String>) {
         let (key, command, params): (String, &str, Value) = match app {
             "lightcraft" => {
                 // The photo's id is in `ui.inspect`; its file name is one query away.
-                let active = inspect.get("active").filter(|id| !id.is_null())?;
+                let Some(active) = inspect.get("active").filter(|id| !id.is_null()) else {
+                    return (None, None);
+                };
                 (active.to_string(), "photo.inspect", json!({}))
             }
             "filmcraft" => (String::new(), "project.inspect", json!({})),
-            _ => return None,
+            _ => return (None, None),
         };
         let cached_ok = self
             .document_cache
             .as_ref()
-            .is_some_and(|(cached_key, _)| *cached_key == key);
+            .is_some_and(|(cached_key, _, _)| *cached_key == key);
         let fresh = self
             .last_document
             .is_some_and(|at| at.elapsed() < DOCUMENT_EVERY);
@@ -595,19 +603,25 @@ impl ControlClient {
             return self
                 .document_cache
                 .as_ref()
-                .and_then(|(_, name)| name.clone());
+                .map(|(_, name, detail)| (name.clone(), detail.clone()))
+                .unwrap_or((None, None));
         }
         self.last_document = Some(Instant::now());
         // A failed lookup isn't fatal: window detection still works.
-        let name = self
+        let result = self
             .request(
                 "engine.execute",
                 json!({"command": command, "params": params}),
             )
-            .ok()
-            .and_then(|result| name_in(&result));
-        self.document_cache = Some((key, name.clone()));
-        name
+            .ok();
+        let name = result.as_ref().and_then(name_in);
+        let detail = if app == "lightcraft" {
+            result.as_ref().and_then(photo_detail)
+        } else {
+            None
+        };
+        self.document_cache = Some((key, name.clone(), detail.clone()));
+        (name, detail)
     }
 }
 
@@ -856,6 +870,9 @@ fn state_from_inspect(app: &str, result: &Value) -> LiveState {
                 .map(busy_label);
         }
         "photocraft" => {
+            state.detail = result
+                .get("document")
+                .and_then(|doc| size_text(doc.get("width")?, doc.get("height")?));
             state.busy = result
                 .get("jobs")
                 .and_then(Value::as_array)
@@ -875,6 +892,7 @@ fn state_from_inspect(app: &str, result: &Value) -> LiveState {
                 == Some(true);
         }
         "pdfcraft" => {
+            state.detail = pdf_page_detail(result);
             state.tool = result
                 .get("quick_tool")
                 .and_then(Value::as_str)
@@ -897,6 +915,39 @@ fn state_from_inspect(app: &str, result: &Value) -> LiveState {
         _ => {}
     }
     state
+}
+
+fn size_text(width: &Value, height: &Value) -> Option<String> {
+    let (w, h) = (width.as_u64()?, height.as_u64()?);
+    (w > 0 && h > 0).then(|| format!("{w}×{h}"))
+}
+
+/// "Page 3 of 12" from PdfCraft's `ui.state`.
+fn pdf_page_detail(result: &Value) -> Option<String> {
+    let page = result.get("active")?.get("page")?.as_u64()?;
+    let pages = result
+        .get("documents")?
+        .as_array()?
+        .iter()
+        .find(|doc| doc.get("active").and_then(Value::as_bool) == Some(true))?
+        .get("pages")?
+        .as_u64()?;
+    Some(format!("Page {page} of {pages}"))
+}
+
+/// "6000×4000 · ★★★" from LightCraft's `photo.inspect`.
+fn photo_detail(photo: &Value) -> Option<String> {
+    let size = size_text(photo.get("width")?, photo.get("height")?);
+    let stars = photo
+        .get("rating")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        .min(5) as usize;
+    let rating = (stars > 0).then(|| "★".repeat(stars));
+    match (size, rating) {
+        (Some(size), Some(rating)) => Some(format!("{size} · {rating}")),
+        (size, rating) => size.or(rating),
+    }
 }
 
 /// "Exporting 3 of 10" style labels from the apps become the activity as-is.
@@ -1168,6 +1219,29 @@ mod tests {
         let state = state_from_inspect("pdfcraft", &pdf);
         assert_eq!(state.document.as_deref(), Some("report.pdf"));
         assert_eq!(state.activity("PdfCraft").as_deref(), Some("Redacting"));
+    }
+
+    #[test]
+    fn details_for_pdf_photo_and_image_size() {
+        let pdf = json!({
+            "documents": [{"name": "a.pdf", "pages": 12, "active": true}],
+            "active": {"page": 3},
+        });
+        assert_eq!(
+            state_from_inspect("pdfcraft", &pdf).detail.as_deref(),
+            Some("Page 3 of 12")
+        );
+        let photo = json!({"width": 6000, "height": 4000, "rating": 3});
+        assert_eq!(photo_detail(&photo).as_deref(), Some("6000×4000 · ★★★"));
+        assert_eq!(
+            photo_detail(&json!({"width": 10, "height": 5, "rating": 0})).as_deref(),
+            Some("10×5")
+        );
+        let psd = json!({"document": {"name": "p.psd", "width": 1920, "height": 1080}});
+        assert_eq!(
+            state_from_inspect("photocraft", &psd).detail.as_deref(),
+            Some("1920×1080")
+        );
     }
 
     #[test]

@@ -237,3 +237,26 @@ MIT
 ## Live detection (recommended)
 
 CraftPulse can ask each Craft app directly what you're doing (tool, dialog, open document, and in LightCraft the selected photo) instead of guessing from window titles. Click **Turn on live detection** in the settings page, then restart your Craft apps once. This sets the apps' own `*_CONTROL_PORT` environment variables (PhotoCraft also gets a private token file). PdfCraft has no variable: start it with `pdfcraft --control "%USERPROFILE%\.pdfcraft-control.json"`. Only read-only queries are ever sent, and the channel listens on `127.0.0.1` only. If an app isn't reachable, CraftPulse falls back to window detection.
+
+## Timer and themes
+
+The settings page has an **Elapsed timer** switch (Off, Session, Document) and a **Theme** switch (System, Dark, Light, Mono). Session counts from when the app opened; Document restarts when you switch files.
+
+## Updates and extra details
+
+CraftPulse checks GitHub for a newer release (switch it off under **Check for updates**) and tells you when one exists. It never installs anything by itself. **Show extra details** adds things like "Page 3 of 12" (PdfCraft), image size (PhotoCraft) and size plus star rating (LightCraft) to the document line.
+
+## Card text, buttons, pause and stats
+
+- **Card:** change the two text lines with placeholders `{app}`, `{activity}`, `{document}` and `{detail}`, and add up to two link buttons (https links only).
+- **Pause sharing:** from the tray menu or the settings page (1 hour, or until you resume).
+- **Time in apps:** shows how long you were active in each Craft app today and over 7 days. It is stored only in `stats.json` next to `config.toml`; use **Clear** to erase it.
+
+## More controls
+
+- **Quiet hours:** stop sharing automatically during a daily window (it can cross midnight, e.g. 22:00 to 07:00).
+- **Pause while streaming or recording:** stops sharing while OBS, Streamlabs, XSplit, Twitch Studio, Zoom screen share or Medal is running.
+- **Hide this document:** one click on the settings page hides the open document's name from now on.
+- **Milestone notes:** optional short notes such as "2h in" or "export #5".
+- **Recent activity:** the last things your card showed, kept in memory only.
+- **Export / Import layout:** share your card text, buttons, timer and theme as a small `.json` file. It never includes your hide patterns or app settings.

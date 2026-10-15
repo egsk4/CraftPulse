@@ -45,6 +45,11 @@ fn fake_discord_socket_receives_presence_and_clear_commands() {
         state: "in PhotoCraft — Editing".to_string(),
         large_image_key: "photocraft".to_string(),
         small_image_key: "artcraft".to_string(),
+        started_at: Some(1_700_000_000),
+        buttons: vec![(
+            "Portfolio".to_string(),
+            "https://example.com/me".to_string(),
+        )],
     };
     assert_eq!(worker.set_activity(card), (true, false));
     worker.clear();
@@ -65,6 +70,14 @@ fn fake_discord_socket_receives_presence_and_clear_commands() {
     assert_eq!(
         activity["args"]["activity"]["assets"]["small_image"],
         "artcraft"
+    );
+    assert_eq!(
+        activity["args"]["activity"]["timestamps"]["start"],
+        1_700_000_000
+    );
+    assert_eq!(
+        activity["args"]["activity"]["buttons"][0]["label"],
+        "Portfolio"
     );
     assert_eq!(clear_opcode, 1);
     assert_eq!(clear["args"]["activity"], Value::Null);

@@ -1,7 +1,8 @@
 [package]
 name = "craftpulse"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
+build = "src/build.rs"
 description = "Discord Rich Presence for the ArtCraft creative apps"
 license = "MIT"
 
@@ -10,6 +11,7 @@ name = "craftpulse"
 path = "src/main.rs"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "6"
 discord-rich-presence = "0.2.5"
 getrandom = "0.3"
@@ -20,6 +22,7 @@ serde_json = "1"
 sysinfo = "0.33"
 tao = "0.34"
 tiny_http = "0.12"
+ureq = "2"
 toml_edit = { version = "0.22", features = ["serde"] }
 tray-icon = "0.21"
 
