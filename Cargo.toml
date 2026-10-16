@@ -24,7 +24,9 @@ tao = "0.34"
 tiny_http = "0.12"
 ureq = "2"
 toml_edit = { version = "0.22", features = ["serde"] }
-tray-icon = "0.21"
+# Default feature `libxdo` only drives the predefined Cut/Copy/Paste menu
+# items. This app does not use those, and linking it requires libxdo.
+tray-icon = { version = "0.21", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # Windows toast notifications (restart reminders).
