@@ -43,7 +43,7 @@ Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they
 | `craftpulse-discord-rpc` | Owns the Discord IPC connection. Requests time out after 4 seconds, and the worker is recreated if it hangs |
 | `craftpulse-control` | Reads the chosen app's state over its control channel, so a slow app can't stall the main loop |
 | `craftpulse-settings` | Local HTTP server for the settings page |
-| `craftpulse-tray` | Tray icon and menu (a `tao` event loop, created with `with_any_thread(true)` on Windows) |
+| `craftpulse-tray` | Tray icon and menu (a `tao` event loop, created with `with_any_thread(true)` on Windows and Linux) |
 
 ### Source layout
 
@@ -87,7 +87,7 @@ Because `settings.html` is embedded with `include_str!`, you must rebuild after 
 
 Activity priority is set in `main.rs`: hint file, per-app activity from settings, dialog, button rule, idle, then the default.
 
-macOS and Linux skip step 4, and read the window title through `osascript` and `xprop`.
+macOS and Linux skip step 4, and read the window title through `osascript` and `xprop`. Linux process names, AppImage detection, and Discord icons are described in [LINUX.md](LINUX.md).
 
 ## Common changes
 

@@ -33,13 +33,18 @@ fn run_tray(settings_url: String, quit: Arc<AtomicBool>) {
         Icon, MouseButton, MouseButtonState, Rect, TrayIconBuilder, TrayIconEvent,
     };
 
-    // On Windows, tao refuses to create an event loop off the main thread
-    // unless `with_any_thread(true)` is set. The tray runs on its own thread.
+    // tao refuses to create an event loop off the main thread unless
+    // `with_any_thread(true)` is set. The tray runs on its own thread.
     #[allow(unused_mut)]
     let mut builder = EventLoopBuilder::new();
     #[cfg(windows)]
     {
         use tao::platform::windows::EventLoopBuilderExtWindows;
+        builder.with_any_thread(true);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::EventLoopBuilderExtUnix;
         builder.with_any_thread(true);
     }
     let event_loop = builder.build();

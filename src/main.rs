@@ -34,7 +34,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const APP_NAMES: [&str; 7] = [
+const APP_NAMES: [&str; 13] = [
     "PhotoCraft",
     "VectorCraft",
     "FilmCraft",
@@ -42,6 +42,12 @@ const APP_NAMES: [&str; 7] = [
     "PdfCraft",
     "EffectCraft",
     "DesignCraft",
+    "FigCraft",
+    "WordCraft",
+    "SoundCraft",
+    "DeckCraft",
+    "CADCraft",
+    "GridCraft",
 ];
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// How often to resend an unchanged card while connected. A refreshed or
@@ -420,6 +426,12 @@ fn default_activity(app_name: &str, configured: &str) -> String {
         "pdfcraft" => "Working on a PDF",
         "effectcraft" => "Making motion graphics",
         "designcraft" => "Designing a layout",
+        "figcraft" => "Designing an interface",
+        "wordcraft" => "Writing a document",
+        "soundcraft" => "Editing audio",
+        "deckcraft" => "Editing a presentation",
+        "cadcraft" => "Drafting",
+        "gridcraft" => "Editing a spreadsheet",
         _ => "Creating",
     }
     .to_string()

@@ -16,7 +16,7 @@ Everything happens locally on your machine. The only thing sent anywhere is the 
 
 ## Supported apps
 
-The seven apps below are recognised, but **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
+The apps below are recognised, but **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
 
 | App | What it is | Built-in activity |
 | --- | --- | --- |
@@ -27,6 +27,12 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 | [PdfCraft](https://getartcraft.com/apps/pdfcraft) | PDF workbench | Working on a PDF |
 | [EffectCraft](https://getartcraft.com/apps/effectcraft) | Motion graphics and VFX | Making motion graphics |
 | [DesignCraft](https://getartcraft.com/apps/designcraft) | Page layout and publishing | Designing a layout |
+| [FigCraft](https://getartcraft.com/apps/figcraft) | Interface design | Designing an interface |
+| [WordCraft](https://getartcraft.com/apps/wordcraft) | Word processor | Writing a document |
+| [SoundCraft](https://getartcraft.com/apps/soundcraft) | Audio recording and mixing | Editing audio |
+| [DeckCraft](https://getartcraft.com/apps/deckcraft) | Presentations | Editing a presentation |
+| [CADCraft](https://getartcraft.com/apps/cadcraft) | CAD and drafting | Drafting |
+| [GridCraft](https://getartcraft.com/apps/gridcraft) | Spreadsheets | Editing a spreadsheet |
 
 ## Features
 

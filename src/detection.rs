@@ -56,20 +56,31 @@ impl ProcessDetector {
         let mut streaming = false;
         for process in self.system.processes().values() {
             let process_name = process.name().to_string_lossy();
+            // AppImages whose AppRun is a symlink keep the comm name `AppRun`.
+            // The resolved executable (`usr/bin/lightcraft`) is the real app.
+            let exe_path = process
+                .exe()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let lower_name = process_name.to_lowercase();
+            let lower_exe = exe_path.to_lowercase();
             streaming |= is_streaming_process(&lower_name);
-            if !supported
-                .iter()
-                .any(|candidate| process_matches(&process_name, candidate))
-                && lower_name.contains("craft")
+            let matched = supported.iter().find(|candidate| {
+                process_matches(&process_name, candidate) || process_matches(&exe_path, candidate)
+            });
+            if matched.is_none()
+                && (lower_name.contains("craft") || lower_exe.contains("craft"))
                 && !lower_name.contains("craftpulse")
+                && !lower_exe.contains("craftpulse")
             {
-                unknown.push(process_name.to_string());
+                let label = if exe_path.is_empty() {
+                    process_name.to_string()
+                } else {
+                    exe_path
+                };
+                unknown.push(label);
             }
-            if let Some(name) = supported
-                .iter()
-                .find(|candidate| process_matches(&process_name, candidate))
-            {
+            if let Some(name) = matched {
                 active.push((
                     name.to_lowercase(),
                     *name,
@@ -633,17 +644,39 @@ fn idle_seconds() -> Option<u64> {
 }
 
 pub fn process_matches(process: &str, app: &str) -> bool {
-    fn without_exe_extension(name: &str) -> &str {
-        let name = name.trim();
-        name.strip_suffix(".exe")
-            .or_else(|| {
-                name.get(..name.len().saturating_sub(4)).filter(|_| {
-                    name.len() >= 4 && name[name.len() - 4..].eq_ignore_ascii_case(".exe")
-                })
-            })
-            .unwrap_or(name)
+    fn strip_suffix_ignore_ascii_case<'a>(name: &'a str, suffix: &str) -> Option<&'a str> {
+        if name.len() >= suffix.len()
+            && name[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+        {
+            Some(&name[..name.len() - suffix.len()])
+        } else {
+            None
+        }
     }
-    without_exe_extension(process).eq_ignore_ascii_case(without_exe_extension(app))
+
+    let process = process.trim().trim_end_matches(" (deleted)").trim();
+    let process = std::path::Path::new(process)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(process);
+    let process = strip_suffix_ignore_ascii_case(process, ".exe")
+        .or_else(|| strip_suffix_ignore_ascii_case(process, ".appimage"))
+        .unwrap_or(process);
+    let app = strip_suffix_ignore_ascii_case(app.trim(), ".exe").unwrap_or(app.trim());
+    if process.eq_ignore_ascii_case(app) {
+        return true;
+    }
+    // Linux AppImage file names look like `lightcraft-0.8.0-linux-x86_64`.
+    // The 15-character process comm is the same string cut to `lightcraft-0.8.`.
+    // A letter after the name (`LightCraftBeta`, `lightcraft-cli`) is a different program.
+    let process_lower = process.to_ascii_lowercase();
+    let app_lower = app.to_ascii_lowercase();
+    match process_lower.strip_prefix(&app_lower) {
+        Some(rest) => {
+            rest.starts_with('-') && rest.chars().nth(1).is_some_and(|ch| ch.is_ascii_digit())
+        }
+        None => false,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1017,6 +1050,22 @@ mod tests {
             fn process_name_matching_rejects_similar_names() {
                 assert!(!process_matches(&format!("{}Beta", $app), $app));
             }
+            #[test]
+            fn process_name_matches_versioned_appimage_and_exe_path() {
+                assert!(process_matches(
+                    &format!("{}-0.8.0-linux-x86_64.AppImage", $app.to_lowercase()),
+                    $app
+                ));
+                assert!(process_matches(
+                    &format!("/tmp/.mount_app/usr/bin/{}", $app.to_lowercase()),
+                    $app
+                ));
+                assert!(!process_matches(
+                    &format!("{}-cli", $app.to_lowercase()),
+                    $app
+                ));
+                assert!(!process_matches("AppRun", $app));
+            }
         };
     }
 
@@ -1047,5 +1096,29 @@ mod tests {
     mod design_craft {
         use super::*;
         app_suffix_tests!("DesignCraft");
+    }
+    mod word_craft {
+        use super::*;
+        app_suffix_tests!("WordCraft");
+    }
+    mod grid_craft {
+        use super::*;
+        app_suffix_tests!("GridCraft");
+    }
+    mod deck_craft {
+        use super::*;
+        app_suffix_tests!("DeckCraft");
+    }
+    mod fig_craft {
+        use super::*;
+        app_suffix_tests!("FigCraft");
+    }
+    mod sound_craft {
+        use super::*;
+        app_suffix_tests!("SoundCraft");
+    }
+    mod cad_craft {
+        use super::*;
+        app_suffix_tests!("CADCraft");
     }
 }

@@ -105,6 +105,12 @@ impl Default for Config {
             ("PdfCraft", "pdfcraft"),
             ("EffectCraft", "effectcraft"),
             ("DesignCraft", "designcraft"),
+            ("FigCraft", "figcraft"),
+            ("WordCraft", "wordcraft"),
+            ("SoundCraft", "soundcraft"),
+            ("DeckCraft", "deckcraft"),
+            ("CADCraft", "cadcraft"),
+            ("GridCraft", "gridcraft"),
         ]
         .into_iter()
         .map(|(name, key)| {
@@ -202,8 +208,17 @@ impl Config {
             .ok()
             .and_then(|text| de::from_str::<Self>(&text).ok())
             .unwrap_or_default();
+        config.ensure_builtin_apps();
         config.last_modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
         config
+    }
+
+    /// Older config files predate some apps. Fill those in so they can be
+    /// toggled, without changing apps the user already has.
+    fn ensure_builtin_apps(&mut self) {
+        for (name, app) in Self::default().apps {
+            self.apps.entry(name).or_insert(app);
+        }
     }
 
     pub fn reload_if_changed(&mut self) {
@@ -214,6 +229,7 @@ impl Config {
         }
         if let Ok(text) = fs::read_to_string(&path) {
             if let Ok(mut loaded) = de::from_str::<Self>(&text) {
+                loaded.ensure_builtin_apps();
                 loaded.last_modified = modified;
                 *self = loaded;
             }
@@ -413,6 +429,30 @@ large_image_key = "effectcraft"
 enabled = true
 large_image_key = "designcraft"
 
+[apps.FigCraft]
+enabled = true
+large_image_key = "figcraft"
+
+[apps.WordCraft]
+enabled = true
+large_image_key = "wordcraft"
+
+[apps.SoundCraft]
+enabled = true
+large_image_key = "soundcraft"
+
+[apps.DeckCraft]
+enabled = true
+large_image_key = "deckcraft"
+
+[apps.CADCraft]
+enabled = true
+large_image_key = "cadcraft"
+
+[apps.GridCraft]
+enabled = true
+large_image_key = "gridcraft"
+
 # Optional: show an activity while a button or tab is selected in an app.
 # Find element names by running CraftPulse with CRAFTPULSE_DUMP_UIA=1
 # (it writes uia-<app>.txt next to this file).
@@ -432,7 +472,7 @@ mod tests {
     #[test]
     fn default_config_has_all_apps() {
         let config = Config::default();
-        assert_eq!(config.apps.len(), 7);
+        assert_eq!(config.apps.len(), 13);
         assert_eq!(config.application_id, "1558510318513033329");
     }
 
@@ -453,7 +493,7 @@ mod tests {
             .keys()
             .map(|name| config.control_port(name))
             .collect();
-        // PdfCraft has no fixed port (0), the other six are distinct.
+        // Apps without their own port share 0. The six fixed ports stay distinct.
         assert_eq!(ports.len(), 7);
         config.apps.get_mut("PhotoCraft").unwrap().control_port = Some(9000);
         assert_eq!(config.control_port("photocraft"), 9000);
@@ -512,7 +552,22 @@ mod tests {
     #[test]
     fn default_document_parses() {
         let parsed: Config = de::from_str(&default_document().to_string()).unwrap();
-        assert_eq!(parsed.apps.len(), 7);
+        assert_eq!(parsed.apps.len(), 13);
+    }
+
+    #[test]
+    fn older_config_gains_apps_added_later() {
+        let mut parsed: Config = de::from_str("[apps.PhotoCraft]\nenabled = true\n").unwrap();
+        assert!(!parsed.apps.contains_key("WordCraft"));
+        parsed.ensure_builtin_apps();
+        assert!(parsed.apps.contains_key("WordCraft"));
+        assert!(parsed.apps.contains_key("GridCraft"));
+        assert!(parsed.apps.contains_key("DeckCraft"));
+        assert!(parsed.apps.contains_key("FigCraft"));
+        assert!(parsed.apps.contains_key("SoundCraft"));
+        assert!(parsed.apps.contains_key("CADCraft"));
+        assert!(parsed.apps.contains_key("LightCraft"));
+        assert!(parsed.app_config("PhotoCraft").enabled);
     }
 
     #[test]

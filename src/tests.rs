@@ -58,6 +58,7 @@ fn fake_discord_socket_receives_presence_and_clear_commands() {
         server.join().expect("fake Discord server should finish");
     assert_eq!(activity_opcode, 1);
     assert_eq!(activity["cmd"], "SET_ACTIVITY");
+    assert_eq!(activity["args"]["activity"]["name"], "PhotoCraft");
     assert_eq!(activity["args"]["activity"]["details"], "Poster");
     assert_eq!(
         activity["args"]["activity"]["state"],
