@@ -4,6 +4,9 @@ on:
     tags: ['CraftPulse-v*']
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     uses: ./.github/workflows/build.yml
@@ -25,6 +28,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release already exists; keeping its downloads and notes unchanged."
+            exit 0
+          fi
           gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag \
             --title "CraftPulse ${GITHUB_REF_NAME#CraftPulse-} (alpha)" \
             --prerelease --notes-file RELEASE_NOTES.md

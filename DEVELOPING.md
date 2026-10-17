@@ -221,7 +221,7 @@ four executable archives only after the cross-platform and Arch checks pass.
    naming convention, for example `CraftPulse-v0.4.2`, and must match Cargo.toml.
 
 ```sh
-git tag -a CraftPulse-v0.4.2 -m "CraftPulse v0.4.2 alpha"
+git tag -s CraftPulse-v0.4.2 -m "CraftPulse v0.4.2 alpha"
 git push origin CraftPulse-v0.4.2
 ```
 
@@ -231,6 +231,16 @@ with its license, preserves executable permissions in Unix archives, and writes
 `SHA256SUMS.txt`. The publication job uses GitHub's job-scoped token with
 `contents: write`; no personal access token is required. Builds and tests use
 read-only repository access. The release is marked as an alpha prerelease.
+
+Publication keeps an existing release's downloads and notes unchanged. Release
+runs for the same tag are serialized to avoid concurrent publication.
+
+To add a signature to an existing tag, keep its target commit unchanged. Historical
+tags run the workflow stored at their target commit, so updating this workflow on
+main does not protect older tags. Temporarily disable the **Release** workflow in
+GitHub Actions before pushing replacement signatures, then enable it again after
+both pushes succeed. Use an explicit `--force-with-lease` for each tag so another
+person's tag update cannot be overwritten accidentally.
 
 If a check fails, fix the failure before publishing. Do not replace an existing
 release tag to retry a source change; use a new patch version. A failed workflow
