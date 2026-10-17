@@ -9,7 +9,7 @@ Poster concept
 in PhotoCraft — Editing
 ```
 
-Everything happens locally on your machine. The only thing sent anywhere is the presence card to your own Discord client.
+Detection, settings and usage history stay on your machine. CraftPulse sends the presence card to your local Discord client. The optional update checker requests public release metadata from GitHub; it does not send project names or settings.
 
 > **v0.5.0 is the first stable release.** PhotoCraft and LightCraft have the most detailed detection. Other apps and desktop environments have different capabilities; see the platform table and Linux requirements below. Please [report problems](https://github.com/egsk4/CraftPulse/issues) with your platform and a sanitized support report.
 
@@ -85,7 +85,7 @@ On Linux, building needs GTK 3, Ayatana AppIndicator, libxdo and WebKitGTK 4.1 d
 
 | Platform | Support |
 | --- | --- |
-| Windows | Full: app detection, window titles, document tabs, dialog activity, button/tab rules, idle detection |
+| Windows | App detection, live API and UI Automation: app detection, window titles, document tabs, dialog activity, button/tab rules, idle detection |
 | macOS | App detection and window title only |
 | Linux | AppImage detection; window titles/focus on supported desktops; idle detection; native settings window; live detection (see Linux below) |
 
@@ -93,7 +93,7 @@ Windows uses UI Automation for selected button/tab rules and document tabs. On L
 
 ## Settings
 
-Open the settings page from the tray icon (left-click, or **Open CraftPulse settings** in the menu). It runs on a random local port protected by a one-time token, so only your own browser session can use it.
+Open the settings page from the tray icon (left-click, or **Open CraftPulse settings** in the menu). It runs on a random local port protected by a random per-launch token, so only your own browser session can use it.
 
 | Setting | What it does |
 | --- | --- |

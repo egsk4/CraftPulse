@@ -34,7 +34,7 @@ jobs:
           fi
           args=()
           version="${GITHUB_REF_NAME#CraftPulse-v}"
-          if [[ "$version" == *-* ]]; then args+=(--prerelease); fi
+          if [[ "$version" == *-* ]]; then args+=(--prerelease); else args+=(--latest); fi
           gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag \
             --title "CraftPulse ${GITHUB_REF_NAME#CraftPulse-}" \
             "${args[@]}" --notes-file RELEASE_NOTES.md

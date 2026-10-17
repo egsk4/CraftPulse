@@ -62,3 +62,14 @@ kernel. See this repository's Actions runs for the new integration's CI results.
 The default suite covers single-instance locking, atomic replacement, backup preservation, invalid startup config fail-closed behavior, rule/idle persistence, update-channel filtering and all usage-counting gates. The smoke test also checks recovery and transaction behavior through the actual local HTTP server. These simulated AppImage and Discord fixtures do not replace testing with every ArtCraft app or desktop.
 
 The built-in resource monitor measures only the CraftPulse process. Native WebView child processes are excluded. An optimized Debian/headless-Sway measurement is recorded below when available; no equivalent Windows/macOS performance measurement has been made in this environment.
+
+### Resource measurement for v0.5.0
+
+On Debian 13 with a headless Sway compositor, an optimized build running through
+`proot` for native WebKit library paths, no ArtCraft app or Discord, updates off,
+and the settings window closed: six samples at five-second intervals showed
+**2.13% mean CPU (100% = one core)** and **51.11 MiB maximum resident memory**.
+The stripped executable was **6.46 MiB**. This includes startup in a short sample;
+WebView child processes and the compositor are excluded. An earlier run before
+background polling backoff observed about 6.84% mean CPU under the same setup.
+These are observations from this container, not targets for every system.
