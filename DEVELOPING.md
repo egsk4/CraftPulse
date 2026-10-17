@@ -6,7 +6,7 @@ CraftPulse is early and has bugs. The current focus is **PhotoCraft** and **Ligh
 
 ## Setup
 
-You need the [Rust toolchain](https://rustup.rs/) (stable) and Git. Windows is the main development platform (`build = "src/build.rs"` in `Cargo.toml` is what embeds the exe icon; without it the exe has the generic icon), because most detection uses Windows UI Automation.
+You need the [Rust toolchain](https://rustup.rs/) (stable) and Git. Windows provides the broadest window-accessibility integration (`build = "src/build.rs"` in `Cargo.toml` is what embeds the exe icon; without it the exe has the generic icon), while Linux uses compositor helpers and app control APIs.
 
 ```powershell
 git clone https://github.com/egsk4/CraftPulse.git
@@ -19,9 +19,9 @@ Run the Discord desktop app and one of the Craft apps to see presence working en
 | Command | What it does |
 | --- | --- |
 | `cargo run` | Debug build. Keeps a console window |
-| `cargo build --release` | Optimised build (LTO, stripped). Has **no console window** |
-| `cargo test` | Runs the unit tests |
-| `cargo fmt` and `cargo clippy` | Format and lint before opening a pull request |
+| `cargo build --release --locked` | Optimised build (LTO, stripped). Has **no console window** |
+| `cargo test --locked` | Runs the unit tests |
+| `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D warnings` | Format and lint before opening a pull request |
 
 Some tests only run on Linux (a fake Discord socket and a fake `xprop`), so they are skipped on Windows.
 
@@ -148,7 +148,7 @@ The server binds to `127.0.0.1` on a random port. The URL, including a random to
 ## Releasing
 
 1. Update `version` in `Cargo.toml`.
-2. Run `cargo test` and `cargo build --release`.
+2. Run `cargo test` and `cargo build --release --locked`.
 3. Create a GitHub release with a tag like `v0.1.0` and attach `target/release/craftpulse.exe`.
 
 Don't commit `target/` or your own `config.toml`.
@@ -205,3 +205,34 @@ dbus-run-session -- python3 scripts/smoke_linux.py
 The native-window test loads the real authenticated settings page in WebKitGTK and verifies safe button rendering. The Python smoke test starts an isolated config, a simulated AppImage payload and a fake Discord IPC server. On Wayland it verifies idle status, then disables idle and verifies normal activity plus button data. It also checks settings validation, persistence and reporting a failed runtime environment update. These simulations do not replace tests with real ArtCraft applications or Discord.
 
 Live user rules can match the active tool, panel or view returned by the control channel. Linux does not emulate the entire Windows accessibility tree. Helper commands have bounded execution/output; a missing or stuck helper cannot block the main polling loop.
+
+
+## Creating a release
+
+The current release is **v0.4.1 alpha**. GitHub Actions publishes the release and
+four executable archives only after the cross-platform and Arch checks pass.
+
+1. Update the package version in `Cargo.toml` and its root entry in `Cargo.lock`.
+2. Update `RELEASE_NOTES.md`, the README download table and release links.
+3. Run `cargo fmt --check`, `cargo test --locked` and
+   `cargo clippy --locked --all-targets -- -D warnings`. For Linux GUI and
+   AppImage checks, run `bash scripts/check_arch.sh` on Arch as an ordinary user.
+4. Commit and push to main, then tag that exact commit. Tags follow the existing
+   naming convention, for example `CraftPulse-v0.4.1`, and must match Cargo.toml.
+
+```sh
+git tag -a CraftPulse-v0.4.1 -m "CraftPulse v0.4.1 alpha"
+git push origin CraftPulse-v0.4.1
+```
+
+`.github/workflows/release.yml` calls the reusable build and Arch workflows.
+`scripts/package_release.py` validates the tag, packages each compiled executable
+with its license, preserves executable permissions in Unix archives, and writes
+`SHA256SUMS.txt`. The publication job uses GitHub's job-scoped token with
+`contents: write`; no personal access token is required. Builds and tests use
+read-only repository access. The release is marked as an alpha prerelease.
+
+If a check fails, fix the failure before publishing. Do not replace an existing
+release tag to retry a source change; use a new patch version. A failed workflow
+can be rerun for a transient service problem. Windows/macOS CI builds do not
+substitute for testing real ArtCraft applications on those platforms.

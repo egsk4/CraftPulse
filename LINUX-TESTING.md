@@ -1,6 +1,6 @@
 # Linux compatibility and testing
 
-CraftPulse 0.4.0 supports ArtCraft AppImage payloads launched directly or from
+CraftPulse 0.4.1 supports ArtCraft AppImage payloads launched directly or from
 ArtCraft Launcher. Detection groups helper processes with their application and
 preserves the focused child's window information. The launcher itself is not
 reported as a creative app.
@@ -40,7 +40,7 @@ The default smoke test creates a simulated AppImage payload.
 
 ## Evidence and limits
 
-The integrated 0.4.0 code passed 184 local regression tests, strict Clippy and a
+The integrated 0.4.x code passed 184 local regression tests, strict Clippy and a
 debug build. Separate Wayland idle, native WebKit settings rendering and
 AppImage/Discord smoke checks also passed against this integrated code.
 Three integration tests are ignored by default because they need

@@ -42,11 +42,31 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 
 ## Install
 
-### Prebuilt (recommended)
+### Prebuilt (v0.4.1 alpha)
 
-1. Download the latest `craftpulse` executable from the [Releases page](https://github.com/egsk4/CraftPulse/releases).
-2. Run it. A CraftPulse icon appears in your system tray.
-3. Make sure the Discord desktop app is running, then open one of the Craft apps.
+Download from [CraftPulse v0.4.1](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.1):
+
+| System | Download |
+| --- | --- |
+| Windows x86-64 | `craftpulse-v0.4.1-windows-x86_64.zip` |
+| Arch Linux x86-64 | `craftpulse-v0.4.1-archlinux-x86_64.tar.gz` |
+| Other Linux x86-64 | `craftpulse-v0.4.1-linux-x86_64.tar.gz` |
+| macOS Apple Silicon | `craftpulse-v0.4.1-macos-arm64.tar.gz` |
+
+1. Extract the archive. `SHA256SUMS.txt` contains the published checksums.
+2. Run `craftpulse.exe` on Windows or `./craftpulse` on Linux/macOS.
+3. Start the Discord desktop app, then open a supported ArtCraft app.
+
+On Arch, install the runtime dependencies first:
+
+```sh
+sudo pacman -S --needed gtk3 libayatana-appindicator xdotool webkit2gtk-4.1
+```
+
+Other Linux distributions need the equivalent GTK 3, WebKitGTK 4.1, Ayatana
+AppIndicator and libxdo libraries. The Linux archives are dynamically linked;
+older distributions may need to build from source. See [desktop requirements](#linux-arch-appimages-and-wayland)
+for the optional helpers used by your compositor.
 
 ### Build from source
 
@@ -55,7 +75,7 @@ Requires the [Rust toolchain](https://rustup.rs/) (stable).
 ```powershell
 git clone https://github.com/egsk4/CraftPulse.git
 cd CraftPulse
-cargo build --release
+cargo build --release --locked
 ```
 
 The binary is written to `target/release/craftpulse`. To stop a running copy before rebuilding, quit it from the tray menu (or run `Stop-Process -Name craftpulse -Force`).
@@ -267,14 +287,14 @@ CraftPulse checks GitHub for a newer release (switch it off under **Check for up
 Build dependencies on Arch:
 
 ```sh
-sudo pacman -S --needed rust cargo pkgconf gtk3 libayatana-appindicator xdotool webkit2gtk-4.1
+sudo pacman -S --needed base-devel rust pkgconf gtk3 libayatana-appindicator xdotool webkit2gtk-4.1
 cargo build --release --locked
 cargo test --locked
 ```
 
-A VCS package recipe and desktop entry are in `packaging/arch/`. Once these changes are in the repository, `makepkg -si` from that directory builds the package. The recipe fetches GitHub source; it does not package uncommitted local edits. The recipe has not been tested with Arch's makepkg in this Debian environment.
+A VCS package recipe and desktop entry are in `packaging/arch/`. `makepkg -si` from that directory builds the package from the current main branch. The recipe fetches GitHub source; it does not package uncommitted local edits. The recipe has not been tested with Arch's makepkg in this Debian environment.
 
-Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Real ArtCraft AppImages still need testing on your desktop.
+Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Launcher 0.4.1 and PhotoCraft 0.9.0 AppImages were tested separately under Sway, including PhotoCraft's live API. Other apps and desktop combinations still need real-world testing.
 
 | Desktop | Window/focus detection | Idle detection |
 | --- | --- | --- |
