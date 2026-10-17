@@ -280,8 +280,12 @@ fn kde_focused() -> Vec<WinInfo> {
 }
 
 fn x11_windows() -> Vec<WinInfo> {
+    x11_windows_with_program("xprop")
+}
+
+fn x11_windows_with_program(program: &str) -> Vec<WinInfo> {
     let Some(root) = run(
-        "xprop",
+        program,
         &["-root", "_NET_CLIENT_LIST", "_NET_ACTIVE_WINDOW"],
     ) else {
         return Vec::new();
@@ -302,7 +306,7 @@ fn x11_windows() -> Vec<WinInfo> {
                 return None;
             }
             let details = run(
-                "xprop",
+                program,
                 &["-id", &id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME"],
             )?;
             let (pid, title) = parse_x11_window(&details)?;
@@ -734,16 +738,7 @@ mod tests {
         )
         .unwrap();
         fs::set_permissions(&fake_xprop, fs::Permissions::from_mode(0o755)).unwrap();
-        let original_path = std::env::var_os("PATH");
-        let mut paths = vec![temp.clone()];
-        paths.extend(std::env::split_paths(
-            &original_path.clone().unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
-        let windows = x11_windows();
-        if let Some(path) = original_path {
-            std::env::set_var("PATH", path);
-        }
+        let windows = x11_windows_with_program(fake_xprop.to_str().unwrap());
         assert_eq!(
             windows,
             vec![WinInfo {
