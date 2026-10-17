@@ -294,7 +294,7 @@ cargo test --locked
 
 A VCS package recipe and desktop entry are in `packaging/arch/`. `makepkg -si` from that directory builds the package from the current main branch. The recipe fetches GitHub source; it does not package uncommitted local edits. The recipe has not been tested with Arch's makepkg in this Debian environment.
 
-Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Launcher 0.4.2 and PhotoCraft 0.9.0 AppImages were tested separately under Sway, including PhotoCraft's live API. Other apps and desktop combinations still need real-world testing.
+Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Launcher 0.4.1 and PhotoCraft 0.9.0 AppImages were tested separately under Sway, including PhotoCraft's live API. Other apps and desktop combinations still need real-world testing.
 
 | Desktop | Window/focus detection | Idle detection |
 | --- | --- | --- |

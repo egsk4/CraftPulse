@@ -49,7 +49,7 @@ and in DEVELOPING.md.
 
 The same Linux detection and control fixes previously passed full Arch CI in
 [the fork](https://github.com/egsk4/CraftPulseee/actions/runs/39026769086).
-Official launcher AppImages 0.3.2 and 0.4.2 and PhotoCraft 0.9.0 were separately
+Official launcher AppImages 0.3.2 and 0.4.1 and PhotoCraft 0.9.0 were separately
 verified against their published SHA256 values and opened on a Debian/Sway host.
 Real PhotoCraft presence and authenticated control API checks passed there.
 Those AppImages were extracted because the host has no FUSE; installation
