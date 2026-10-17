@@ -42,16 +42,16 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 
 ## Install
 
-### Prebuilt (v0.4.3 alpha)
+### Prebuilt (v0.4.2 alpha)
 
-Download from [CraftPulse v0.4.3](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.3):
+Download from [CraftPulse v0.4.2](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.2):
 
 | System | Download |
 | --- | --- |
-| Windows x86-64 | `craftpulse-v0.4.3-windows-x86_64.zip` |
-| Arch Linux x86-64 | `craftpulse-v0.4.3-archlinux-x86_64.tar.gz` |
-| Other Linux x86-64 | `craftpulse-v0.4.3-linux-x86_64.tar.gz` |
-| macOS Apple Silicon | `craftpulse-v0.4.3-macos-arm64.tar.gz` |
+| Windows x86-64 | `craftpulse-v0.4.2-windows-x86_64.zip` |
+| Arch Linux x86-64 | `craftpulse-v0.4.2-archlinux-x86_64.tar.gz` |
+| Other Linux x86-64 | `craftpulse-v0.4.2-linux-x86_64.tar.gz` |
+| macOS Apple Silicon | `craftpulse-v0.4.2-macos-arm64.tar.gz` |
 
 1. Extract the archive. `SHA256SUMS.txt` contains the published checksums.
 2. Run `craftpulse.exe` on Windows or `./craftpulse` on Linux/macOS.

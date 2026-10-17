@@ -1,6 +1,6 @@
 # Linux compatibility and testing
 
-CraftPulse 0.4.3 supports ArtCraft AppImage payloads launched directly or from
+CraftPulse 0.4.2 supports ArtCraft AppImage payloads launched directly or from
 ArtCraft Launcher. Detection groups helper processes with their application and
 preserves the focused child's window information. The launcher itself is not
 reported as a creative app.

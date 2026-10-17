@@ -1,6 +1,6 @@
 [package]
 name = "craftpulse"
-version = "0.4.3"
+version = "0.4.2"
 edition = "2021"
 build = "src/build.rs"
 description = "Discord Rich Presence for the ArtCraft creative apps"

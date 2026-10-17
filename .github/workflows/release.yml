@@ -28,3 +28,9 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag \
             --title "CraftPulse ${GITHUB_REF_NAME#CraftPulse-} (alpha)" \
             --prerelease --notes-file RELEASE_NOTES.md
+      - name: Remove superseded unused v0.4.3 release after publishing v0.4.2
+        if: github.ref_name == 'CraftPulse-v0.4.2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete CraftPulse-v0.4.3 --cleanup-tag --yes
