@@ -280,14 +280,11 @@ fn kde_focused() -> Vec<WinInfo> {
 }
 
 fn x11_windows() -> Vec<WinInfo> {
-    x11_windows_with_program("xprop")
+    x11_windows_with(|args| run("xprop", args))
 }
 
-fn x11_windows_with_program(program: &str) -> Vec<WinInfo> {
-    let Some(root) = run(
-        program,
-        &["-root", "_NET_CLIENT_LIST", "_NET_ACTIVE_WINDOW"],
-    ) else {
+fn x11_windows_with(query: impl Fn(&[&str]) -> Option<String>) -> Vec<WinInfo> {
+    let Some(root) = query(&["-root", "_NET_CLIENT_LIST", "_NET_ACTIVE_WINDOW"]) else {
         return Vec::new();
     };
     let line_ids = |key: &str| {
@@ -305,10 +302,7 @@ fn x11_windows_with_program(program: &str) -> Vec<WinInfo> {
             if started.elapsed() >= Duration::from_secs(1) {
                 return None;
             }
-            let details = run(
-                program,
-                &["-id", &id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME"],
-            )?;
+            let details = query(&["-id", &id, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME"])?;
             let (pid, title) = parse_x11_window(&details)?;
             Some(WinInfo {
                 pid,
@@ -727,18 +721,23 @@ mod tests {
 
     #[test]
     fn fake_xprop_binary_lists_x11_windows() {
-        use std::{fs, os::unix::fs::PermissionsExt};
+        use std::{fs, io::Write};
         let temp = std::env::temp_dir().join(format!("craftpulse-fake-x11-{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp);
         fs::create_dir_all(&temp).unwrap();
         let fake_xprop = temp.join("xprop");
-        fs::write(
-            &fake_xprop,
-            "#!/bin/sh\nif [ \"$1\" = \"-root\" ]; then\n  printf '_NET_CLIENT_LIST(WINDOW): window id # 0xabc\\n_NET_ACTIVE_WINDOW(WINDOW): window id # 0xabc\\n'\nelse\n  printf '_NET_WM_PID(CARDINAL) = 42\\n_NET_WM_NAME(UTF8_STRING) = \"Mock Project — PhotoCraft\"\\n'\nfi\n",
-        )
-        .unwrap();
-        fs::set_permissions(&fake_xprop, fs::Permissions::from_mode(0o755)).unwrap();
-        let windows = x11_windows_with_program(fake_xprop.to_str().unwrap());
+        let mut writer = fs::File::create(&fake_xprop).unwrap();
+        writer.write_all("#!/bin/sh\nif [ \"$1\" = \"-root\" ]; then\n  printf '_NET_CLIENT_LIST(WINDOW): window id # 0xabc\\n_NET_ACTIVE_WINDOW(WINDOW): window id # 0xabc\\n'\nelse\n  printf '_NET_WM_PID(CARDINAL) = 42\\n_NET_WM_NAME(UTF8_STRING) = \"Mock Project — PhotoCraft\"\\n'\nfi\n".as_bytes()).unwrap();
+        writer.flush().unwrap();
+        // Other threads can fork while a fixture is being written, inheriting
+        // its writer and making direct execution fail with ETXTBSY. Keep this
+        // writer open to exercise that condition; the installed shell reads it.
+        let windows = x11_windows_with(|args| {
+            let mut command_args = vec![fake_xprop.to_str().unwrap()];
+            command_args.extend_from_slice(args);
+            run("/bin/sh", &command_args)
+        });
+        drop(writer);
         assert_eq!(
             windows,
             vec![WinInfo {

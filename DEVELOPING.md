@@ -209,7 +209,7 @@ Live user rules can match the active tool, panel or view returned by the control
 
 ## Creating a release
 
-The current release is **v0.4.2 alpha**. GitHub Actions publishes the release and
+The current release is **v0.4.3 alpha**. GitHub Actions publishes the release and
 four executable archives only after the cross-platform and Arch checks pass.
 
 1. Update the package version in `Cargo.toml` and its root entry in `Cargo.lock`.
@@ -218,11 +218,11 @@ four executable archives only after the cross-platform and Arch checks pass.
    `cargo clippy --locked --all-targets -- -D warnings`. For Linux GUI and
    AppImage checks, run `bash scripts/check_arch.sh` on Arch as an ordinary user.
 4. Commit and push to main, then tag that exact commit. Tags follow the existing
-   naming convention, for example `CraftPulse-v0.4.2`, and must match Cargo.toml.
+   naming convention, for example `CraftPulse-v0.4.3`, and must match Cargo.toml.
 
 ```sh
-git tag -a CraftPulse-v0.4.2 -m "CraftPulse v0.4.2 alpha"
-git push origin CraftPulse-v0.4.2
+git tag -a CraftPulse-v0.4.3 -m "CraftPulse v0.4.3 alpha"
+git push origin CraftPulse-v0.4.3
 ```
 
 `.github/workflows/release.yml` calls the reusable build and Arch workflows.
