@@ -280,7 +280,7 @@ mod tests {
                     if(document.getElementById('status')?.textContent !== 'Running') return false;
                     drawPreview({app_name:'PhotoCraft',document:'Poster',state:'Editing',buttons:[['<Portfolio>','https://example.com/me'],['Unsafe','javascript:alert(1)']]});
                     const buttons=document.querySelectorAll('#preview-buttons a');
-                    return buttons.length===1 && buttons[0].textContent==='<Portfolio>' && buttons[0].href==='https://example.com/me' && buttons[0].rel==='noopener noreferrer' && document.getElementById('idle-after').value==='300';
+                    return buttons.length===1 && buttons[0].textContent==='<Portfolio>' && buttons[0].href==='https://example.com/me' && buttons[0].rel==='noopener noreferrer' && document.getElementById('idle-after').value==='300' && document.getElementById('idle-less').getAttribute('aria-label').includes('30 seconds') && document.getElementById('idle-more').getAttribute('aria-label').includes('30 seconds') && getComputedStyle(document.getElementById('idle-after')).backgroundColor==='rgba(0, 0, 0, 0)';
                 })()"#, move |value| { if value == "true" { passed.store(true, Ordering::Relaxed); } }).unwrap();
             }
         });

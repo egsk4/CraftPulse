@@ -90,6 +90,14 @@
     input[type=text],textarea,select{width:100%;background:var(--sunk);border:1px solid var(--line);border-radius:7px;color:var(--text);font:inherit;font-size:13.5px;padding:8px 10px}
     textarea{min-height:72px;resize:vertical;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12.5px}
     input[type=text]:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+    .duration-control{display:inline-flex;align-items:center;flex:none;border:1px solid var(--line);border-radius:9px;background:var(--sunk);overflow:hidden;height:36px}
+    .duration-control:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px var(--line)}
+    .duration-control button{width:34px;height:100%;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:19px;cursor:pointer}
+    .duration-control button:hover{background:var(--raised);color:var(--text)}
+    .duration-control input{appearance:textfield;-moz-appearance:textfield;width:65px;min-width:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:13.5px;font-variant-numeric:tabular-nums;text-align:right;padding:7px 3px;outline:none}
+    .duration-control input::-webkit-inner-spin-button,.duration-control input::-webkit-outer-spin-button{appearance:none;-webkit-appearance:none;margin:0}
+    .duration-control .unit{font-size:12px;color:var(--muted);padding:0 10px 0 3px;user-select:none}
+    @media(max-width:480px){.idle-row{align-items:flex-start;flex-direction:column}.duration-control{align-self:flex-start}}
     ::placeholder{color:var(--faint)}
     :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     label.cap{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}
@@ -187,7 +195,7 @@
     <div class="panel">
       <label class="row"><span class="grow"><strong>Share my activity</strong><small>Turn everything on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
-      <label class="row"><span class="grow"><strong>Idle after</strong><small>Seconds without input; 0 turns idle status off</small></span><input id="idle-after" type="number" min="0" max="86400" step="1" value="300" style="width:100px"></label>
+      <div class="row idle-row"><label for="idle-after" class="grow"><strong>Idle after</strong><small id="idle-help">Seconds without input; 0 turns idle status off</small></label><div class="duration-control"><button type="button" id="idle-less" aria-label="Decrease idle timeout by 30 seconds" title="30 seconds less">−</button><input id="idle-after" type="number" min="0" max="86400" step="1" value="300" aria-describedby="idle-help"><span class="unit" aria-hidden="true">sec</span><button type="button" id="idle-more" aria-label="Increase idle timeout by 30 seconds" title="30 seconds more">+</button></div></div>
       <label class="row"><span class="grow"><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Show extra details</strong><small>Adds things like “Page 3 of 12” or the image size to the document line</small></span><input class="switch" id="details" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Check for updates</strong><small>Looks for new releases on GitHub. Nothing is installed automatically.</small></span><input class="switch" id="updates" type="checkbox"></label>
@@ -353,6 +361,7 @@ async function save(){
 async function refresh(){
   try{
     const diag=await call("/api/diagnostics");
+    $("idle-help").textContent=diag.platform==="windows"?"Seconds without input; 0 turns off. Once idle, return to ArtCraft to resume.":"Seconds without input; 0 turns idle status off";
     $("diagnostics").textContent=JSON.stringify(diag,null,2);drawPreview(diag.last_presence);
     $("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet.";
     const lv=await call("/api/live");live={};lv.apps.forEach(s=>live[s.name]=s);
@@ -415,6 +424,15 @@ $("layout-file").onchange=async e=>{
   e.target.value="";
 };
 $("update-open").onclick=()=>call("/api/update/open",{method:"POST",body:"{}"});
+let idleSaveTimer;
+function adjustIdle(delta){
+  const input=$("idle-after"),value=Number(input.value);
+  input.value=String(Math.max(0,Math.min(86400,(Number.isFinite(value)?Math.round(value):300)+delta)));
+  clearTimeout(idleSaveTimer);
+  idleSaveTimer=setTimeout(save,250);
+}
+$("idle-less").onclick=()=>adjustIdle(-30);
+$("idle-more").onclick=()=>adjustIdle(30);
 $("save").onclick=save;$("refresh").onclick=refresh;
 ["idle-after","enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
 $("test").onclick=async()=>{const r=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});drawPreview(r)};

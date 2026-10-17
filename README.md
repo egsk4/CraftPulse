@@ -42,16 +42,16 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 
 ## Install
 
-### Prebuilt (v0.4.1 alpha)
+### Prebuilt (v0.4.2 alpha)
 
-Download from [CraftPulse v0.4.1](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.1):
+Download from [CraftPulse v0.4.2](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.2):
 
 | System | Download |
 | --- | --- |
-| Windows x86-64 | `craftpulse-v0.4.1-windows-x86_64.zip` |
-| Arch Linux x86-64 | `craftpulse-v0.4.1-archlinux-x86_64.tar.gz` |
-| Other Linux x86-64 | `craftpulse-v0.4.1-linux-x86_64.tar.gz` |
-| macOS Apple Silicon | `craftpulse-v0.4.1-macos-arm64.tar.gz` |
+| Windows x86-64 | `craftpulse-v0.4.2-windows-x86_64.zip` |
+| Arch Linux x86-64 | `craftpulse-v0.4.2-archlinux-x86_64.tar.gz` |
+| Other Linux x86-64 | `craftpulse-v0.4.2-linux-x86_64.tar.gz` |
+| macOS Apple Silicon | `craftpulse-v0.4.2-macos-arm64.tar.gz` |
 
 1. Extract the archive. `SHA256SUMS.txt` contains the published checksums.
 2. Run `craftpulse.exe` on Windows or `./craftpulse` on Linux/macOS.
@@ -294,7 +294,7 @@ cargo test --locked
 
 A VCS package recipe and desktop entry are in `packaging/arch/`. `makepkg -si` from that directory builds the package from the current main branch. The recipe fetches GitHub source; it does not package uncommitted local edits. The recipe has not been tested with Arch's makepkg in this Debian environment.
 
-Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Launcher 0.4.1 and PhotoCraft 0.9.0 AppImages were tested separately under Sway, including PhotoCraft's live API. Other apps and desktop combinations still need real-world testing.
+Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Launcher 0.4.2 and PhotoCraft 0.9.0 AppImages were tested separately under Sway, including PhotoCraft's live API. Other apps and desktop combinations still need real-world testing.
 
 | Desktop | Window/focus detection | Idle detection |
 | --- | --- | --- |
@@ -311,7 +311,7 @@ Install the optional helpers for your desktop. Linux opens a native WebKitGTK se
 
 **Launch at login:** XDG autostart is supported, including launching CraftPulse from an AppImage. Standalone compositors may need `exec-once = craftpulse` (Hyprland), `exec craftpulse` (Sway) or `spawn-at-startup "craftpulse"` (niri), or an XDG autostart runner such as `dex`.
 
-**Idle:** adjust seconds in settings, or `idle_after_secs` in config.toml. Zero disables idle status. Hints, a per-app action override, and live dialogs/background work take priority over idle. Ordinary tools do not. The activity log records idle/resume transitions.
+**Idle:** adjust seconds using the themed number field and −/+ buttons (30-second steps), or set `idle_after_secs` in config.toml. Zero disables idle status. On Windows, once an ArtCraft app is idle, clicking in Discord or another app keeps it idle; return to the ArtCraft app to resume. Hints, a per-app action override, and live dialogs/background work take priority over idle. Ordinary tools do not. The activity log records idle/resume transitions.
 
 **Buttons:** the settings preview shows your card's link buttons. Discord itself may hide your own buttons; CraftPulse cannot force Discord's client to display them to you.
 

@@ -22,6 +22,22 @@ fn is_idle(seconds: Option<u64>, threshold: u64) -> bool {
     threshold > 0 && seconds.is_some_and(|seconds| seconds >= threshold)
 }
 
+/// Once idle, activity in another app must not make ArtCraft look active.
+#[cfg(any(windows, test))]
+fn windows_idle_status(
+    seconds: Option<u64>,
+    threshold: u64,
+    was_idle: bool,
+    previous_app: Option<u32>,
+    current_app: Option<u32>,
+    artcraft_focused: bool,
+) -> bool {
+    threshold > 0
+        && current_app.is_some()
+        && (is_idle(seconds, threshold)
+            || (was_idle && previous_app == current_app && !artcraft_focused))
+}
+
 /// (normalized name, app name, process id, start time)
 type Candidate<'a> = (String, &'a str, u32, u64);
 type UiTabs = (Vec<(String, Option<bool>)>, String, Option<String>);
@@ -134,7 +150,8 @@ impl ProcessDetector {
             let root = roots.get(&fpid).copied().unwrap_or(fpid);
             active.iter().find(|(_, _, pid, _)| *pid == root).cloned()
         });
-        let chosen = if focused.is_some() {
+        let artcraft_focused = focused.is_some();
+        let chosen = if artcraft_focused {
             focused
         } else if cfg!(any(target_os = "windows", target_os = "linux")) {
             // Another (non-ArtCraft) window has focus: stay on the last app
@@ -155,7 +172,21 @@ impl ProcessDetector {
             idle_for.unwrap_or(u64::MAX),
             std::sync::atomic::Ordering::Relaxed,
         );
-        self.idle = is_idle(idle_for, self.idle_after_secs);
+        #[cfg(windows)]
+        {
+            self.idle = windows_idle_status(
+                idle_for,
+                self.idle_after_secs,
+                self.idle,
+                self.current_pid,
+                chosen.as_ref().map(|(_, _, pid, _)| *pid),
+                artcraft_focused,
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            self.idle = is_idle(idle_for, self.idle_after_secs);
+        }
 
         match chosen {
             Some((_, name, process_id, _)) => {
@@ -897,6 +928,71 @@ mod tests {
         assert_eq!(detected.process_id, child.id());
         assert_eq!(detected.name, "PhotoCraft");
     }
+    #[test]
+    fn windows_idle_survives_discord_input_until_returning_to_artcraft() {
+        let app = Some(42);
+        let mut idle = super::windows_idle_status(Some(300), 300, false, app, app, false);
+        assert!(idle);
+        for seconds in [0, 1, 0, 10] {
+            idle = super::windows_idle_status(Some(seconds), 300, idle, app, app, false);
+            assert!(idle, "input in Discord must not resume ArtCraft activity");
+        }
+        assert!(!super::windows_idle_status(
+            Some(0),
+            300,
+            idle,
+            app,
+            app,
+            true
+        ));
+        assert!(super::windows_idle_status(
+            Some(300),
+            300,
+            false,
+            app,
+            app,
+            true
+        ));
+    }
+
+    #[test]
+    fn windows_idle_latch_resets_for_disabled_closed_or_different_apps() {
+        let app = Some(42);
+        assert!(!super::windows_idle_status(
+            Some(0),
+            300,
+            false,
+            app,
+            app,
+            false
+        ));
+        assert!(!super::windows_idle_status(
+            Some(900),
+            0,
+            true,
+            app,
+            app,
+            false
+        ));
+        assert!(!super::windows_idle_status(
+            Some(0),
+            300,
+            true,
+            app,
+            Some(43),
+            false
+        ));
+        assert!(!super::windows_idle_status(
+            Some(900),
+            300,
+            true,
+            app,
+            None,
+            false
+        ));
+        assert!(super::windows_idle_status(None, 300, true, app, app, false));
+    }
+
     #[test]
     fn idle_threshold_supports_disabled_unknown_and_boundary() {
         assert!(!super::is_idle(None, 300));
