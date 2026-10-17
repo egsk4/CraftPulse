@@ -33,7 +33,7 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 - **Automatic detection** of the Craft app you're using. If several are open, the one with focus wins.
 - **Project name on your card**, read from the window title and, on Windows, from the app's open document tabs.
 - **Activity detection**: dialogs like Export, Render, Save, Print, Import and Open are recognised, and you can map selected buttons or tabs to your own activity text.
-- **Idle status** after 5 minutes without keyboard or mouse input.
+- **Idle status** after a configurable period without keyboard or mouse input (5 minutes by default; 0 disables it).
 - **Privacy controls**: hide project names everywhere, per app, or whenever a name matches a regular expression.
 - **Local settings page** with a live card preview, per-app overrides, diagnostics and an activity log.
 - **Tray app**: no console window. Left-click the tray icon to open settings, right-click for the menu.
@@ -60,7 +60,7 @@ cargo build --release
 
 The binary is written to `target/release/craftpulse`. To stop a running copy before rebuilding, quit it from the tray menu (or run `Stop-Process -Name craftpulse -Force`).
 
-On Linux, the tray icon libraries typically need GTK and appindicator development packages installed.
+On Linux, building needs GTK 3, Ayatana AppIndicator, libxdo and WebKitGTK 4.1 development packages. See Linux below.
 
 ## Platform support
 
@@ -68,9 +68,9 @@ On Linux, the tray icon libraries typically need GTK and appindicator developmen
 | --- | --- |
 | Windows | Full: app detection, window titles, document tabs, dialog activity, button/tab rules, idle detection |
 | macOS | App detection and window title only |
-| Linux | App detection and window title only (uses `xprop` under X11) |
+| Linux | AppImage detection; window titles/focus on supported desktops; idle detection; native settings window; live detection (see Linux below) |
 
-Button and tab rules, document-tab names and idle detection use Windows UI Automation, so they are Windows only.
+Windows uses UI Automation for selected button/tab rules and document tabs. On Linux, live detection supplies tools, panels, views and document names; user rules can match those active controls. Arbitrary accessibility controls are not guaranteed to have equivalents.
 
 ## Settings
 
@@ -103,9 +103,9 @@ The activity is chosen in this order, first match wins:
 
 1. An **activity hint file** (see [Integrations](#integrations))
 2. The **per-app activity text** from settings
-3. A detected **dialog**: Export, Render, Save, Print, Import or Open
-4. A matching **button or tab rule**
-5. **Idle**, after 5 minutes without input
+3. Live background work or a live dialog
+4. **Idle**, after the configured period without input
+5. A matching live-control rule, live activity, or detected window/button activity
 6. The **default activity**
 
 To respect Discord's limits, updates are rate limited to 4 per 20 seconds, a changed card is sent at most every 5 seconds, and the presence is refreshed every 30 seconds. If Discord isn't running, CraftPulse retries every 30 seconds for up to 5 minutes after a Craft app appears.
@@ -260,3 +260,40 @@ CraftPulse checks GitHub for a newer release (switch it off under **Check for up
 - **Milestone notes:** optional short notes such as "2h in" or "export #5".
 - **Recent activity:** the last things your card showed, kept in memory only.
 - **Export / Import layout:** share your card text, buttons, timer and theme as a small `.json` file. It never includes your hide patterns or app settings.
+
+
+## Linux: Arch, AppImages and Wayland
+
+Build dependencies on Arch:
+
+```sh
+sudo pacman -S --needed rust cargo pkgconf gtk3 libayatana-appindicator xdotool webkit2gtk-4.1
+cargo build --release --locked
+cargo test --locked
+```
+
+A VCS package recipe and desktop entry are in `packaging/arch/`. Once these changes are in the repository, `makepkg -si` from that directory builds the package. The recipe fetches GitHub source; it does not package uncommitted local edits. The recipe has not been tested with Arch's makepkg in this Debian environment.
+
+Process detection checks the executable, command name and AppImage environment, including versioned names and payloads with generic executable names. Real ArtCraft AppImages still need testing on your desktop.
+
+| Desktop | Window/focus detection | Idle detection |
+| --- | --- | --- |
+| Hyprland | `hyprctl` | Wayland ext-idle-notify |
+| Sway | `swaymsg` | Wayland ext-idle-notify |
+| niri | `niri msg` | Wayland ext-idle-notify |
+| KDE Plasma | `kdotool` (focused window only) | ext-idle-notify when provided |
+| GNOME Wayland | Use live detection; native windows cannot be enumerated | Mutter idle monitor |
+| X11 | `xprop` (`xorg-xprop` on Arch) | `xprintidle` |
+
+Install the optional helpers for your desktop. Linux opens a native WebKitGTK settings window from **Open CraftPulse** in the tray menu. Wayland controls its placement; it stays open until closed. **Open in browser** remains available. GNOME needs an AppIndicator extension to display the tray icon.
+
+**Smart detection:** enable it in settings. The result distinguishes variables saved to `~/.config/environment.d/50-craftpulse.conf` from variables applied to the running systemd user session. Log out and back in, then reopen the ArtCraft launcher and its apps. If your compositor/launcher starts from a shell that does not import the systemd environment, export the displayed variables in that launch environment. PdfCraft additionally needs `--control ~/.pdfcraft-control.json`. PhotoCraft's token file is restricted to its owner.
+
+**Launch at login:** XDG autostart is supported, including launching CraftPulse from an AppImage. Standalone compositors may need `exec-once = craftpulse` (Hyprland), `exec craftpulse` (Sway) or `spawn-at-startup "craftpulse"` (niri), or an XDG autostart runner such as `dex`.
+
+**Idle:** adjust seconds in settings, or `idle_after_secs` in config.toml. Zero disables idle status. Hints, a per-app action override, and live dialogs/background work take priority over idle. Ordinary tools do not. The activity log records idle/resume transitions.
+
+**Buttons:** the settings preview shows your card's link buttons. Discord itself may hide your own buttons; CraftPulse cannot force Discord's client to display them to you.
+
+See [Linux test commands and verification evidence](LINUX-TESTING.md) for the
+Arch CI checks and real-AppImage testing limits.

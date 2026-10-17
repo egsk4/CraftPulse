@@ -1,0 +1,43 @@
+name: Arch Linux
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    steps:
+      - name: Install signed Arch packages
+        run: pacman -Syu --noconfirm --needed git base-devel rust gtk3 webkit2gtk-4.1 libayatana-appindicator xdotool python sway dbus
+      - name: Allow unprivileged headless Sway in the container
+        run: |
+          # Arch grants Sway cap_sys_nice, outside Docker's capability set.
+          # Headless testing needs no realtime priority; remove that privilege.
+          if [ -n "$(getcap /usr/bin/sway)" ]; then setcap -r /usr/bin/sway; fi
+      - uses: actions/checkout@v4
+      - name: Prepare unprivileged test user
+        run: |
+          useradd -m tester
+          chown -R tester:tester "$GITHUB_WORKSPACE"
+      - name: Build and check
+        shell: bash
+        run: |
+          set +e
+          runuser -u tester -- bash scripts/check_arch.sh > arch-test.log 2>&1
+          result=$?
+          tail -100 arch-test.log
+          { echo '### Arch check output'; echo '```text'; tail -100 arch-test.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$result" != 0 ]]; then
+            python - <<'DIAGNOSTICS'
+          from pathlib import Path
+          message = Path('arch-test.log').read_text()[-2000:]
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Arch check output::' + message)
+          DIAGNOSTICS
+          fi
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: craftpulse-arch-x86_64
+          path: target/release/craftpulse

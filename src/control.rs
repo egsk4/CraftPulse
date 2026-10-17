@@ -136,7 +136,10 @@ pub fn probe(config: &crate::config::Config, app: &str) -> LiveStatus {
 /// per-user environment variables the apps read at launch. On Windows this
 /// runs `setx` (no admin rights needed; apps must be restarted). Elsewhere it
 /// only returns the lines to add to a shell profile. Returns (applied, lines).
-pub fn enable_environment(config: &crate::config::Config, apps: &[&str]) -> (bool, Vec<String>) {
+pub fn enable_environment(
+    config: &crate::config::Config,
+    apps: &[&str],
+) -> (bool, bool, Vec<String>) {
     let mut pairs: Vec<(String, String)> = Vec::new();
     for app in apps {
         if !config.app_config(app).live {
@@ -169,11 +172,18 @@ pub fn enable_environment(config: &crate::config::Config, apps: &[&str]) -> (boo
                 .is_ok_and(|status| status.success());
             all_ok &= ok;
         }
-        return (all_ok, lines);
+        (all_ok, all_ok, lines)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        (false, lines)
+        {
+            let (persisted, applied) = crate::linux::set_session_environment(&pairs);
+            (applied, persisted, lines)
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        (false, false, lines)
     }
 }
 
@@ -199,6 +209,37 @@ pub struct LiveState {
 }
 
 impl LiveState {
+    /// Apply user rules to the active tool, panel or view reported by the app.
+    /// This supplies a cross-platform equivalent for these controls without
+    /// pretending that Linux exposes Windows UI Automation.
+    pub fn rule_activity(
+        &self,
+        app: &str,
+        rules: &[crate::config::ActivityRule],
+    ) -> Option<String> {
+        fn key(text: &str) -> String {
+            text.split('(')
+                .next()
+                .unwrap_or(text)
+                .chars()
+                .filter(|ch| ch.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect()
+        }
+        rules
+            .iter()
+            .filter(|rule| rule.app.eq_ignore_ascii_case(app))
+            .find_map(|rule| {
+                let prefix = key(&rule.element);
+                (!prefix.is_empty()
+                    && [&self.tool, &self.panel, &self.view]
+                        .into_iter()
+                        .flatten()
+                        .any(|value| key(value).starts_with(&prefix)))
+                .then(|| rule.activity.clone())
+            })
+    }
+
     /// Activity for an open dialog ("Exporting", "Using Camera Raw").
     pub fn dialog_activity(&self) -> Option<String> {
         let pretty = prettify(self.dialog.as_deref()?);
@@ -724,6 +765,11 @@ fn run_hub(shared: Arc<Mutex<HubShared>>) {
 /// token if not. The apps read the same file (`--control-token-file`).
 pub fn ensure_token_file(path: &Path) {
     if path.exists() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
         return;
     }
     let mut random = [0_u8; 32];
@@ -734,6 +780,20 @@ pub fn ensure_token_file(path: &Path) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    #[cfg(unix)]
+    {
+        // Only you may read it: the token is the password to PhotoCraft's control port.
+        use std::{io::Write, os::unix::fs::OpenOptionsExt};
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+        {
+            let _ = file.write_all(token.as_bytes());
+        }
+    }
+    #[cfg(not(unix))]
     let _ = std::fs::write(path, token);
 }
 
@@ -796,11 +856,7 @@ fn dialog_name(result: &Value) -> Option<String> {
 /// The last path component, for "C:\\Art\\poster.psd" -> "poster.psd".
 fn file_name(text: &str) -> Option<String> {
     let text = text.trim();
-    let name = text
-        .rsplit(|ch: char| ch == '\\' || ch == '/')
-        .next()
-        .unwrap_or(text)
-        .trim();
+    let name = text.rsplit(['\\', '/']).next().unwrap_or(text).trim();
     (!name.is_empty()).then(|| name.to_string())
 }
 
@@ -1097,6 +1153,48 @@ pub fn tool_activity(tool: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn user_rules_match_live_controls_on_any_platform() {
+        use crate::config::ActivityRule;
+        let rule = ActivityRule {
+            app: "LightCraft".into(),
+            element: "Info (I)".into(),
+            activity: "My photo info".into(),
+        };
+        let mut state = super::LiveState {
+            panel: Some("info".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            state
+                .rule_activity("lightcraft", std::slice::from_ref(&rule))
+                .as_deref(),
+            Some("My photo info")
+        );
+        assert_eq!(
+            state.rule_activity("PhotoCraft", std::slice::from_ref(&rule)),
+            None
+        );
+        state.panel = Some("edit".into());
+        assert_eq!(state.rule_activity("LightCraft", &[rule]), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_permissions_are_repaired_without_changing_token() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let path =
+            std::env::temp_dir().join(format!("craftpulse-permissions-{}", std::process::id()));
+        fs::write(&path, "existing-token").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        super::ensure_token_file(&path);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), "existing-token");
+        fs::remove_file(path).unwrap();
+    }
     use super::*;
 
     #[test]
@@ -1256,6 +1354,22 @@ mod tests {
             ..LiveState::default()
         };
         assert_eq!(state.dialog_activity().as_deref(), Some("Using Camera Raw"));
+    }
+
+    /// Start real PhotoCraft with control port 7878 and the token file supplied here.
+    #[test]
+    #[ignore = "requires a running real PhotoCraft control server"]
+    fn real_photocraft_control_roundtrip() {
+        let token = std::env::var_os("CRAFTPULSE_TEST_PHOTOCRAFT_TOKEN_FILE")
+            .expect("set CRAFTPULSE_TEST_PHOTOCRAFT_TOKEN_FILE");
+        let mut client = ControlClient::new("PhotoCraft", 7878, PathBuf::from(token));
+        let (connection, _) = client.connect().expect("authenticate with real PhotoCraft");
+        client.connection = Some(connection);
+        let state = client.read_state().expect("read real ui.inspect response");
+        assert!(
+            state.tool.is_some(),
+            "PhotoCraft should report its selected tool"
+        );
     }
 
     #[test]

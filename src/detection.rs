@@ -1,6 +1,6 @@
 use crate::config::ActivityRule;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -11,11 +11,20 @@ pub struct DetectedApp {
     pub document: Option<String>,
 }
 
-/// No keyboard/mouse input for this long counts as "idle".
-const IDLE_AFTER_SECS: u64 = 300;
+/// Largest idle timeout accepted by the settings API (one day).
+pub const MAX_IDLE_SECS: u64 = 86_400;
+
+/// Seconds without input; u64::MAX means this session cannot report idle time.
+pub static LAST_IDLE_SECONDS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+
+fn is_idle(seconds: Option<u64>, threshold: u64) -> bool {
+    threshold > 0 && seconds.is_some_and(|seconds| seconds >= threshold)
+}
 
 /// (normalized name, app name, process id, start time)
 type Candidate<'a> = (String, &'a str, u32, u64);
+type UiTabs = (Vec<(String, Option<bool>)>, String, Option<String>);
 
 #[derive(Default)]
 pub struct ProcessDetector {
@@ -26,6 +35,7 @@ pub struct ProcessDetector {
     pub activity: Option<String>,
     /// True when there has been no keyboard or mouse input for a while.
     pub idle: bool,
+    pub idle_after_secs: u64,
     /// A streaming or recording app (OBS and similar) is running.
     pub streaming: bool,
     /// Raw visible window titles of the chosen app (for the activity log).
@@ -41,6 +51,21 @@ pub struct ProcessDetector {
     pub unknown: Vec<String>,
 }
 
+// Keep one logical app while retaining the window-owning helper processes.
+fn process_root(
+    mut pid: u32,
+    names: &HashMap<u32, String>,
+    parents: &HashMap<u32, Option<u32>>,
+) -> u32 {
+    for _ in 0..names.len() {
+        match parents.get(&pid).copied().flatten() {
+            Some(parent) if names.get(&parent) == names.get(&pid) => pid = parent,
+            _ => break,
+        }
+    }
+    pid
+}
+
 impl ProcessDetector {
     /// User-defined "selected button -> activity" rules from config.toml.
     pub fn set_rules(&mut self, rules: &[ActivityRule]) {
@@ -50,34 +75,54 @@ impl ProcessDetector {
     }
 
     pub fn detect(&mut self, supported: &[&str]) -> Option<DetectedApp> {
-        self.system.refresh_processes(ProcessesToUpdate::All, true);
+        refresh_processes(&mut self.system);
         let mut active: Vec<Candidate> = Vec::new();
         let mut unknown: Vec<String> = Vec::new();
         let mut streaming = false;
+        let mut parents: std::collections::HashMap<u32, Option<u32>> =
+            std::collections::HashMap::new();
         for process in self.system.processes().values() {
             let process_name = process.name().to_string_lossy();
             let lower_name = process_name.to_lowercase();
             streaming |= is_streaming_process(&lower_name);
-            if !supported
+            let names = process_names(process);
+            let matched = supported
                 .iter()
-                .any(|candidate| process_matches(&process_name, candidate))
+                .find(|candidate| names.iter().any(|name| matches_app(name, candidate)));
+            if matched.is_none()
                 && lower_name.contains("craft")
                 && !lower_name.contains("craftpulse")
             {
                 unknown.push(process_name.to_string());
             }
-            if let Some(name) = supported
-                .iter()
-                .find(|candidate| process_matches(&process_name, candidate))
-            {
+            if let Some(name) = matched {
                 active.push((
                     name.to_lowercase(),
                     *name,
                     process.pid().as_u32(),
                     process.start_time(),
                 ));
+                parents.insert(
+                    process.pid().as_u32(),
+                    process.parent().map(|pid| pid.as_u32()),
+                );
             }
         }
+        // An app that starts helper processes of the same name counts once:
+        // keep the one that was not started by another process of the same app.
+        let names_by_pid: std::collections::HashMap<u32, String> = active
+            .iter()
+            .map(|(name, _, pid, _)| (*pid, name.clone()))
+            .collect();
+        let roots: HashMap<u32, u32> = active
+            .iter()
+            .map(|(_, _, pid, _)| (*pid, process_root(*pid, &names_by_pid, &parents)))
+            .collect();
+        let mut families: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (&pid, &root) in &roots {
+            families.entry(root).or_default().push(pid);
+        }
+        active.retain(|(_, _, pid, _)| roots.get(pid) == Some(pid));
         let current = active
             .iter()
             .map(|(name, _, pid, start)| (name.clone(), *pid, *start))
@@ -85,11 +130,13 @@ impl ProcessDetector {
 
         // Prefer the ArtCraft app whose window you are actually using.
         let foreground = foreground_process_id();
-        let focused =
-            foreground.and_then(|fpid| active.iter().find(|(_, _, pid, _)| *pid == fpid).cloned());
+        let focused = foreground.and_then(|fpid| {
+            let root = roots.get(&fpid).copied().unwrap_or(fpid);
+            active.iter().find(|(_, _, pid, _)| *pid == root).cloned()
+        });
         let chosen = if focused.is_some() {
             focused
-        } else if cfg!(target_os = "windows") {
+        } else if cfg!(any(target_os = "windows", target_os = "linux")) {
             // Another (non-ArtCraft) window has focus: stay on the last app
             // while it is still running, otherwise pick the newest one.
             self.current_pid
@@ -103,19 +150,43 @@ impl ProcessDetector {
         unknown.dedup();
         self.unknown = unknown;
         self.previous = current;
-        self.idle = idle_seconds().is_some_and(|seconds| seconds >= IDLE_AFTER_SECS);
+        let idle_for = idle_seconds();
+        LAST_IDLE_SECONDS.store(
+            idle_for.unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        self.idle = is_idle(idle_for, self.idle_after_secs);
 
         match chosen {
             Some((_, name, process_id, _)) => {
                 self.current_pid = Some(process_id);
-                let (title_document, activity, mut titles) = window_info(process_id, name);
+                let mut family = families
+                    .remove(&process_id)
+                    .unwrap_or_else(|| vec![process_id]);
+                family.sort_unstable();
+                if let Some(fpid) = foreground.filter(|pid| family.contains(pid)) {
+                    family.retain(|pid| *pid != fpid);
+                    family.insert(0, fpid);
+                }
+                let ui_pid = foreground
+                    .filter(|pid| family.contains(pid))
+                    .unwrap_or(process_id);
+                let mut title_document = None;
+                let mut activity = None;
+                let mut titles = Vec::new();
+                for pid in family {
+                    let (document, action, window_titles) = window_info(pid, name);
+                    title_document = title_document.or(document);
+                    activity = activity.or(action);
+                    titles.extend(window_titles);
+                }
                 // Reading the accessibility tree is slow, so only do it every 2 seconds.
-                let uia_due = self.uia_pid != Some(process_id)
+                let uia_due = self.uia_pid != Some(ui_pid)
                     || self
                         .uia_checked
-                        .map_or(true, |at| at.elapsed() >= Duration::from_secs(2));
+                        .is_none_or(|at| at.elapsed() >= Duration::from_secs(2));
                 if uia_due {
-                    if self.uia_pid != Some(process_id) {
+                    if self.uia_pid != Some(ui_pid) {
                         self.uia_tabs.clear();
                         self.uia_doc = None;
                         self.uia_activity = None;
@@ -134,8 +205,7 @@ impl ProcessDetector {
                                 }),
                         )
                         .collect();
-                    let (tabs, note, ui_activity) =
-                        tab_candidates_via_uia(process_id, name, &rules);
+                    let (tabs, note, ui_activity) = tab_candidates_via_uia(ui_pid, name, &rules);
                     self.uia_activity = ui_activity;
                     let names: Vec<String> = tabs.iter().map(|(name, _)| name.clone()).collect();
                     let selected = tabs
@@ -169,7 +239,7 @@ impl ProcessDetector {
                     self.uia_tabs = names;
                     self.uia_doc = doc;
                     self.uia_checked = Some(Instant::now());
-                    self.uia_pid = Some(process_id);
+                    self.uia_pid = Some(ui_pid);
                 }
                 let document = self.uia_doc.clone().or(title_document);
                 if !self.uia_note.is_empty() {
@@ -299,7 +369,16 @@ fn window_info(pid: u32, app_name: &str) -> (Option<String>, Option<String>, Vec
     (document, activity, titles)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+fn window_info(pid: u32, app_name: &str) -> (Option<String>, Option<String>, Vec<String>) {
+    let titles = crate::linux::titles_for(pid);
+    let document =
+        pick_document_title(&titles, app_name).and_then(|title| strip_title(title, app_name));
+    let activity = activity_from_titles(&titles, app_name);
+    (document, activity, titles)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn window_info(pid: u32, app_name: &str) -> (Option<String>, Option<String>, Vec<String>) {
     (window_title_for_process(pid, app_name), None, Vec::new())
 }
@@ -362,11 +441,7 @@ fn element_selected(
 /// Set the environment variable CRAFTPULSE_DUMP_UIA=1 to also write the
 /// accessibility tree to `uia-<app>.txt` in the CraftPulse config folder.
 #[cfg(target_os = "windows")]
-fn tab_candidates_via_uia(
-    pid: u32,
-    app_name: &str,
-    rules: &[(String, String)],
-) -> (Vec<(String, Option<bool>)>, String, Option<String>) {
+fn tab_candidates_via_uia(pid: u32, app_name: &str, rules: &[(String, String)]) -> UiTabs {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
     use windows::Win32::{
@@ -498,7 +573,7 @@ fn tab_candidates_via_uia(
                         .iter()
                         .position(|(element, _)| lower.starts_with(element.as_str()))
                     {
-                        if ui_rule.map_or(true, |best| position < best)
+                        if ui_rule.is_none_or(|best| position < best)
                             && element_selected(&element) == Some(true)
                         {
                             ui_rule = Some(position);
@@ -584,11 +659,7 @@ fn tab_candidates_via_uia(
 }
 
 #[cfg(not(target_os = "windows"))]
-fn tab_candidates_via_uia(
-    _pid: u32,
-    _app_name: &str,
-    _rules: &[(String, String)],
-) -> (Vec<(String, Option<bool>)>, String, Option<String>) {
+fn tab_candidates_via_uia(_pid: u32, _app_name: &str, _rules: &[(String, String)]) -> UiTabs {
     (Vec::new(), String::new(), None)
 }
 
@@ -603,7 +674,12 @@ fn foreground_process_id() -> Option<u32> {
     (pid != 0).then_some(pid)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+fn foreground_process_id() -> Option<u32> {
+    crate::linux::focused_pid()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn foreground_process_id() -> Option<u32> {
     None
 }
@@ -619,15 +695,19 @@ fn idle_seconds() -> Option<u64> {
         dwTime: 0,
     };
     unsafe {
-        let _ = GetLastInputInfo(&mut info);
-        if info.dwTime == 0 {
+        if !GetLastInputInfo(&mut info).as_bool() {
             return None;
         }
         Some((GetTickCount().wrapping_sub(info.dwTime) / 1000) as u64)
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+fn idle_seconds() -> Option<u64> {
+    crate::linux::idle_seconds()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn idle_seconds() -> Option<u64> {
     None
 }
@@ -644,6 +724,47 @@ pub fn process_matches(process: &str, app: &str) -> bool {
             .unwrap_or(name)
     }
     without_exe_extension(process).eq_ignore_ascii_case(without_exe_extension(app))
+}
+
+fn matches_app(process: &str, app: &str) -> bool {
+    process_matches(process, app) || {
+        #[cfg(target_os = "linux")]
+        {
+            crate::linux::variant_name_matches(process, app)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+}
+
+/// Every name a process answers to. On Linux that includes the real executable
+/// and the AppImage it came from, because the kernel cuts the process name short.
+fn process_names(process: &sysinfo::Process) -> Vec<String> {
+    #[allow(unused_mut)]
+    let mut names = vec![process.name().to_string_lossy().into_owned()];
+    #[cfg(target_os = "linux")]
+    names.extend(crate::linux::extra_names(process));
+    names
+}
+
+#[cfg(target_os = "linux")]
+fn refresh_processes(system: &mut System) {
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_exe(UpdateKind::OnlyIfNotSet)
+            .with_cmd(UpdateKind::OnlyIfNotSet)
+            .with_environ(UpdateKind::OnlyIfNotSet),
+    );
+}
+
+#[cfg(not(target_os = "linux"))]
+fn refresh_processes(system: &mut System) {
+    system.refresh_processes(ProcessesToUpdate::All, true);
 }
 
 #[cfg(target_os = "windows")]
@@ -681,26 +802,6 @@ fn window_titles_for_process(pid: u32) -> Vec<String> {
     state.1
 }
 
-#[cfg(target_os = "linux")]
-fn window_title_for_process(pid: u32, app_name: &str) -> Option<String> {
-    let windows = std::process::Command::new("xprop")
-        .args(["-root", "_NET_CLIENT_LIST"])
-        .output()
-        .ok()?;
-    let windows = parse_x11_window_ids(&String::from_utf8_lossy(&windows.stdout));
-    for window in windows {
-        let details = std::process::Command::new("xprop")
-            .args(["-id", &window, "_NET_WM_PID", "_NET_WM_NAME", "WM_NAME"])
-            .output()
-            .ok()?;
-        let text = String::from_utf8_lossy(&details.stdout);
-        if let Some(title) = parse_x11_window_title(&text, pid) {
-            return strip_title(&title, app_name);
-        }
-    }
-    None
-}
-
 #[cfg(target_os = "macos")]
 fn window_title_for_process(pid: u32, app_name: &str) -> Option<String> {
     let script = format!(
@@ -718,37 +819,6 @@ fn window_title_for_process(pid: u32, app_name: &str) -> Option<String> {
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn window_title_for_process(_: u32, _: &str) -> Option<String> {
     None
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn parse_x11_window_ids(root_properties: &str) -> Vec<String> {
-    root_properties
-        .split_once('#')
-        .map(|(_, value)| {
-            value
-                .split(|ch: char| ch == ',' || ch.is_whitespace())
-                .filter(|id| id.starts_with("0x"))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn parse_x11_window_title(window_properties: &str, pid: u32) -> Option<String> {
-    let owner = window_properties
-        .lines()
-        .find(|line| line.contains("_NET_WM_PID"))
-        .and_then(|line| line.split('=').nth(1))
-        .and_then(|part| part.trim().parse::<u32>().ok())?;
-    if owner != pid {
-        return None;
-    }
-    window_properties
-        .lines()
-        .find(|line| line.contains("_NET_WM_NAME") || line.contains("WM_NAME"))
-        .and_then(|line| line.split_once('='))
-        .map(|(_, title)| title.trim().trim_matches('"').to_string())
 }
 
 pub fn strip_title(title: &str, app_name: &str) -> Option<String> {
@@ -789,6 +859,52 @@ pub fn strip_title(title: &str, app_name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn helper_windows_keep_the_same_logical_app() {
+        let names = [
+            (1, "photocraft".into()),
+            (2, "photocraft".into()),
+            (3, "lightcraft".into()),
+            (4, "photocraft".into()),
+        ]
+        .into();
+        let parents = [(1, None), (2, Some(1)), (3, Some(1)), (4, Some(2))].into();
+        assert_eq!(super::process_root(4, &names, &parents), 1);
+        assert_eq!(super::process_root(3, &names, &parents), 3);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_payload_is_recognised_from_its_environment() {
+        use std::{fs, process::Command};
+        let dir = std::env::temp_dir().join(format!("craftpulse-payload-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("payload");
+        fs::copy("/bin/sleep", &exe).unwrap();
+        let mut child = Command::new(&exe)
+            .arg("30")
+            .env("APPDIR", &dir)
+            .env("APPIMAGE", "/tmp/PhotoCraft-1.2-x86_64.AppImage")
+            .spawn()
+            .unwrap();
+        let mut detector = super::ProcessDetector::default();
+        let detected = detector.detect(&["PhotoCraft"]);
+        let _ = child.kill();
+        let _ = child.wait();
+        fs::remove_dir_all(dir).unwrap();
+        let detected =
+            detected.expect("AppImage payload must match even with a generic executable name");
+        assert_eq!(detected.process_id, child.id());
+        assert_eq!(detected.name, "PhotoCraft");
+    }
+    #[test]
+    fn idle_threshold_supports_disabled_unknown_and_boundary() {
+        assert!(!super::is_idle(None, 300));
+        assert!(!super::is_idle(Some(299), 300));
+        assert!(super::is_idle(Some(300), 300));
+        assert!(!super::is_idle(Some(1000), 0));
+        assert!(super::is_idle(Some(1), 1));
+    }
     use super::*;
 
     #[test]
@@ -822,51 +938,6 @@ mod tests {
             strip_title("The — Project", "PhotoCraft"),
             Some("The — Project".to_string())
         );
-    }
-
-    #[test]
-    fn parses_fake_x11_window_list_and_title() {
-        let ids = parse_x11_window_ids("_NET_CLIENT_LIST(WINDOW): window id # 0x10, 0x20");
-        assert_eq!(ids, vec!["0x10".to_string(), "0x20".to_string()]);
-        let props =
-            "_NET_WM_PID(CARDINAL) = 42\n_NET_WM_NAME(UTF8_STRING) = \"Poster — PhotoCraft\"";
-        assert_eq!(
-            parse_x11_window_title(props, 42).as_deref(),
-            Some("Poster — PhotoCraft")
-        );
-        assert_eq!(parse_x11_window_title(props, 43), None);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn fake_xprop_binary_drives_window_title_lookup() {
-        use std::{fs, os::unix::fs::PermissionsExt};
-        let temp = std::env::temp_dir().join(format!("craftpulse-fake-x11-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        fs::create_dir_all(&temp).unwrap();
-        let fake_xprop = temp.join("xprop");
-        fs::write(
-            &fake_xprop,
-            "#!/bin/sh\nif [ \"$1\" = \"-root\" ]; then\n  printf '_NET_CLIENT_LIST(WINDOW): window id # 0xabc\\n'\nelse\n  printf '_NET_WM_PID(CARDINAL) = 42\\n'\n  printf '_NET_WM_NAME(UTF8_STRING) = \"Mock Project — PhotoCraft\"\\n'\nfi\n",
-        )
-        .unwrap();
-        fs::set_permissions(&fake_xprop, fs::Permissions::from_mode(0o755)).unwrap();
-        let original_path = std::env::var_os("PATH");
-        let new_path = format!(
-            "{}:{}",
-            temp.display(),
-            original_path
-                .as_ref()
-                .map(|path| path.to_string_lossy())
-                .unwrap_or_default()
-        );
-        std::env::set_var("PATH", new_path);
-        let title = window_title_for_process(42, "PhotoCraft");
-        if let Some(path) = original_path {
-            std::env::set_var("PATH", path);
-        }
-        assert_eq!(title.as_deref(), Some("Mock Project"));
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[test]

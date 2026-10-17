@@ -5,6 +5,8 @@ mod control;
 mod detection;
 mod hints;
 mod history;
+#[cfg(target_os = "linux")]
+mod linux;
 mod milestones;
 mod notify;
 mod pause;
@@ -65,6 +67,17 @@ fn main() {
         Arc::clone(&restart_needed),
     );
     let settings_url = settings.url();
+    // Keep the "launch at login" entry pointing at this exe, in case it was moved,
+    // renamed or replaced by a new version.
+    if shared_config
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .launch_at_login
+    {
+        if let Err(error) = startup::set_enabled(true) {
+            push_log(&log, &format!("Could not refresh launch at login: {error}"));
+        }
+    }
     update::start(Arc::clone(&shared_config));
     // First run: open the settings page so the live-detection question is seen.
     if !shared_config
@@ -79,12 +92,21 @@ fn main() {
     let quit = tray::start(settings_url);
     let mut detector = ProcessDetector::default();
     let hub = ControlHub::start();
-    let mut rpc = RpcWorker::new();
+    // The Discord application ID lives in config.toml; the environment overrides it.
+    let application_id = std::env::var("CRAFTPULSE_APPLICATION_ID").unwrap_or_else(|_| {
+        shared_config
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .application_id
+            .clone()
+    });
+    let mut rpc = RpcWorker::new(application_id.clone());
     let mut last_presence: Option<PresenceCard> = None;
     let mut last_rpc_attempt = Instant::now() - RPC_RETRY_INTERVAL;
     let mut test_override: Option<(PresenceCard, Instant)> = None;
     let mut rate_limiter = RpcRateLimiter::default();
     let mut last_poll = Instant::now();
+    let mut was_idle = false;
     let mut last_titles: Vec<String> = Vec::new();
     let mut last_unknown: Vec<String> = Vec::new();
     let mut discord_unavailable_logged = false;
@@ -94,7 +116,8 @@ fn main() {
     let mut last_stats_save = Instant::now();
     // Elapsed-timer starting points (unix seconds), per app session and per document.
     let mut session_timer: Option<((String, u32), i64)> = None;
-    let mut document_timer: Option<((String, u32, Option<String>), i64)> = None;
+    type DocumentTimer = ((String, u32, Option<String>), i64);
+    let mut document_timer: Option<DocumentTimer> = None;
     // Apps already reminded about this session (one toast each).
     let mut toasted: Vec<String> = Vec::new();
 
@@ -117,9 +140,21 @@ fn main() {
             config.clone()
         };
         detector.set_rules(&current_config.rules);
+        detector.idle_after_secs = current_config.idle_after_secs;
         let detected = detector.detect(&APP_NAMES);
         let auto_activity = detector.activity.clone();
         let idle = detector.idle;
+        if idle != was_idle {
+            push_log(
+                &log,
+                if idle {
+                    "Idle threshold reached"
+                } else {
+                    "Input resumed; idle status cleared"
+                },
+            );
+            was_idle = idle;
+        }
         if detector.unknown != last_unknown {
             last_unknown = detector.unknown.clone();
             if !last_unknown.is_empty() {
@@ -200,7 +235,12 @@ fn main() {
                 .and_then(|h| h.action.clone())
                 .or_else(|| app_config.action.clone())
                 .or(busy)
+                .or_else(|| live.as_ref().and_then(|state| state.dialog_activity()))
                 .or_else(|| idle.then(|| "Idle".to_string()))
+                .or_else(|| {
+                    live.as_ref()
+                        .and_then(|state| state.rule_activity(&app.name, &current_config.rules))
+                })
                 .or(live_activity)
                 .or_else(|| auto_activity.clone())
                 .unwrap_or_else(|| default_activity(&app.name, &current_config.action));
@@ -267,9 +307,8 @@ fn main() {
             card.buttons = current_config
                 .buttons
                 .iter()
-                .filter(|button| button.is_valid())
                 .take(2)
-                .map(|button| (button.label.trim().to_string(), button.url.clone()))
+                .map(|button| (button.label.clone(), button.url.clone()))
                 .collect();
             Some(card)
         });
@@ -318,7 +357,13 @@ fn main() {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
-        if let Some(test_card) = pending_test {
+        if let Some(mut test_card) = pending_test {
+            test_card.buttons = current_config
+                .buttons
+                .iter()
+                .take(2)
+                .map(|button| (button.label.clone(), button.url.clone()))
+                .collect();
             test_override = Some((test_card, Instant::now() + Duration::from_secs(10)));
         }
         if test_override
@@ -377,7 +422,7 @@ fn main() {
                     last_presence = None;
                     if timed_out {
                         push_log(&log, "Discord RPC timed out after 4 seconds");
-                        rpc = RpcWorker::new();
+                        rpc = RpcWorker::new(application_id.clone());
                     }
                 }
                 if sent {

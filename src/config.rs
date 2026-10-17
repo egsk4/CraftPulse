@@ -1,3 +1,4 @@
+use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -17,6 +18,8 @@ pub type SharedConfig = Arc<Mutex<Config>>;
 #[serde(default)]
 pub struct Config {
     pub enabled: bool,
+    /// Seconds without input before Idle; zero disables idle status.
+    pub idle_after_secs: u64,
     pub hide_project_name: bool,
     pub hide_patterns: Vec<String>,
     pub action: String,
@@ -31,11 +34,14 @@ pub struct Config {
     /// Add extras like "Page 3 of 12" or image size to the document line.
     pub show_details: bool,
     /// Up to two link buttons on the card.
+    #[serde(deserialize_with = "lenient_buttons")]
     pub buttons: Vec<CardButton>,
     /// Stop sharing between `quiet_start` and `quiet_end` (24h "HH:MM", may cross midnight).
     pub quiet_hours: bool,
-    pub quiet_start: String,
-    pub quiet_end: String,
+    #[serde(with = "crate::quiet::hh_mm")]
+    pub quiet_start: NaiveTime,
+    #[serde(with = "crate::quiet::hh_mm")]
+    pub quiet_end: NaiveTime,
     /// Stop sharing while a streaming or recording app is running.
     pub pause_while_streaming: bool,
     /// Occasional notes on the card ("2h in", "export #5").
@@ -54,23 +60,49 @@ pub struct Config {
 
 /// Shows `activity` while the button/tab whose name starts with `element`
 /// is selected in `app`. Add these under `[[rules]]` in config.toml.
+/// A button as typed or read from a file, before it is checked.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RawCardButton {
+    pub label: String,
+    pub url: String,
+}
+
 /// A link button on the Discord card (Discord allows two, https only).
+/// The only way to get one from text is `TryFrom<RawCardButton>`, so every
+/// `CardButton` already meets Discord's limits.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "RawCardButton")]
 pub struct CardButton {
     pub label: String,
     pub url: String,
 }
 
-impl CardButton {
-    /// Discord's limits: a short label and an https link.
-    pub fn is_valid(&self) -> bool {
-        let label = self.label.trim();
-        !label.is_empty()
-            && label.chars().count() <= 32
-            && self.url.len() <= 512
-            && self.url.starts_with("https://")
-            && !self.url.contains(char::is_whitespace)
+impl TryFrom<RawCardButton> for CardButton {
+    type Error = String;
+
+    fn try_from(raw: RawCardButton) -> Result<Self, String> {
+        let (label, url) = (raw.label.trim().to_string(), raw.url.trim().to_string());
+        if label.is_empty()
+            || label.chars().count() > 32
+            || url.len() > 512
+            || !url.starts_with("https://")
+            || url.contains(char::is_whitespace)
+        {
+            return Err(format!(
+                "Button “{label}” needs a label of up to 32 characters and a link starting with https://"
+            ));
+        }
+        Ok(Self { label, url })
     }
+}
+
+/// Reads the button list from config.toml, skipping a hand-edited bad entry
+/// instead of failing the whole file (which would reset every setting).
+fn lenient_buttons<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<CardButton>, D::Error> {
+    let raw = Vec::<RawCardButton>::deserialize(deserializer)?;
+    Ok(raw.into_iter().filter_map(|b| b.try_into().ok()).collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -119,6 +151,7 @@ impl Default for Config {
         .collect();
         Self {
             enabled: true,
+            idle_after_secs: 300,
             hide_project_name: false,
             hide_patterns: Vec::new(),
             action: "Creating".to_string(),
@@ -130,8 +163,8 @@ impl Default for Config {
             show_details: true,
             buttons: Vec::new(),
             quiet_hours: false,
-            quiet_start: "22:00".to_string(),
-            quiet_end: "07:00".to_string(),
+            quiet_start: NaiveTime::from_hms_opt(22, 0, 0).expect("valid time"),
+            quiet_end: NaiveTime::from_hms_opt(7, 0, 0).expect("valid time"),
             pause_while_streaming: false,
             milestones: false,
             details_template: DEFAULT_DETAILS_TEMPLATE.to_string(),
@@ -301,12 +334,19 @@ impl Config {
             &mut document["state_template"],
             value(self.state_template.clone()),
         );
+        set_value(
+            &mut document["idle_after_secs"],
+            value(self.idle_after_secs as i64),
+        );
         set_value(&mut document["quiet_hours"], value(self.quiet_hours));
         set_value(
             &mut document["quiet_start"],
-            value(self.quiet_start.clone()),
+            value(self.quiet_start.format("%H:%M").to_string()),
         );
-        set_value(&mut document["quiet_end"], value(self.quiet_end.clone()));
+        set_value(
+            &mut document["quiet_end"],
+            value(self.quiet_end.format("%H:%M").to_string()),
+        );
         set_value(
             &mut document["pause_while_streaming"],
             value(self.pause_while_streaming),
@@ -325,7 +365,11 @@ impl Config {
             patterns.push(pattern.as_str());
         }
         set_value(&mut document["hide_patterns"], value(patterns));
-        if document["apps"].as_table().is_none() {
+        if document
+            .get("apps")
+            .and_then(toml_edit::Item::as_table)
+            .is_none()
+        {
             document["apps"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
         for (name, app) in &self.apps {
@@ -427,6 +471,24 @@ large_image_key = "designcraft"
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn idle_setting_round_trips_and_old_configs_keep_five_minutes() {
+        let original: super::Config = toml_edit::de::from_str("enabled = true").unwrap();
+        assert_eq!(original.idle_after_secs, 300);
+        let path =
+            std::env::temp_dir().join(format!("craftpulse-idle-{}.toml", std::process::id()));
+        let mut config = original;
+        config.idle_after_secs = 1;
+        std::fs::write(&path, "# Older minimal config\nenabled = true\n").unwrap();
+        config.save_to(&path).unwrap();
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("# Older minimal config"));
+        let loaded: super::Config =
+            toml_edit::de::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.idle_after_secs, 1);
+        std::fs::remove_file(path).unwrap();
+    }
     use super::*;
 
     #[test]
@@ -496,17 +558,19 @@ mod tests {
         let loaded: Config = de::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded.buttons, config.buttons);
         let _ = fs::remove_file(path);
-        assert!(config.buttons[0].is_valid());
-        assert!(!CardButton {
-            label: "x".into(),
-            url: "http://example.com".into()
-        }
-        .is_valid());
-        assert!(!CardButton {
-            label: "".into(),
-            url: "https://example.com".into()
-        }
-        .is_valid());
+        let raw = |label: &str, url: &str| RawCardButton {
+            label: label.into(),
+            url: url.into(),
+        };
+        assert!(CardButton::try_from(raw(" Site ", " https://example.com ")).is_ok());
+        assert!(CardButton::try_from(raw("x", "http://example.com")).is_err());
+        assert!(CardButton::try_from(raw("", "https://example.com")).is_err());
+        // One bad button in the file is dropped, the rest of the file still loads.
+        let parsed: Config = de::from_str(
+            "buttons = [{label = \"Ok\", url = \"https://a.b\"}, {label = \"Bad\", url = \"ftp://a\"}]",
+        )
+        .unwrap();
+        assert_eq!(parsed.buttons.len(), 1);
     }
 
     #[test]

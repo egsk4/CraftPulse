@@ -83,11 +83,13 @@ Because `settings.html` is embedded with `include_str!`, you must rebuild after 
    - open document tabs, for the project name (labels like `Poster.png @ 78.9% (RGB/8)*` are cleaned to `Poster.png`)
    - the selected button that matches an activity rule
    - for LightCraft, the selected photo and the file name shown in the Info panel
-5. Marks the user idle after 5 minutes without input.
+5. Marks the user idle after the configured timeout (5 minutes by default; zero disables idle).
 
 Activity priority is set in `main.rs`: hint file, per-app activity from settings, dialog, button rule, idle, then the default.
 
-macOS and Linux skip step 4, and read the window title through `osascript` and `xprop`.
+macOS reads window titles through `osascript`. Linux uses compositor helpers on
+Wayland and `xprop` on X11; it gets detailed tools, panels and documents from
+the apps' live control APIs instead of Windows UI Automation.
 
 ## Common changes
 
@@ -175,3 +177,31 @@ Each Craft app can open a loopback JSON-lines control channel. CraftPulse reads 
 The settings page's **Turn on live detection** button (and the first-run prompt) sets these variables with `setx` on Windows. Apps read them at launch, so they must be restarted once. `ControlHub::needs_restart` detects an app that is running but unreachable and triggers the reminder.
 
 Reply shapes differ per app, so `state_from_inspect` in `control.rs` matches fields loosely. The activity log prints each app's `ui.inspect` field names on first connect, which is the fastest way to fix a wrong mapping. Cloning an app's repo and reading its `crates/ui-egui/src/control.rs` `inspect` function shows the exact fields.
+
+
+## Linux regression checks
+
+Linux builds require WebKitGTK 4.1 development files in addition to GTK 3, Ayatana AppIndicator and libxdo. On Debian: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev`.
+
+```sh
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+cargo build --locked
+```
+
+With a running Wayland compositor implementing ext-idle-notify (tested on headless Sway):
+
+```sh
+cargo test --locked wayland_idle -- --ignored --test-threads=1
+```
+
+With a display, D-Bus session and working WebKitGTK subprocess paths:
+
+```sh
+dbus-run-session -- cargo test --locked linux_settings_window -- --ignored --test-threads=1
+dbus-run-session -- python3 scripts/smoke_linux.py
+```
+
+The native-window test loads the real authenticated settings page in WebKitGTK and verifies safe button rendering. The Python smoke test starts an isolated config, a simulated AppImage payload and a fake Discord IPC server. On Wayland it verifies idle status, then disables idle and verifies normal activity plus button data. It also checks settings validation, persistence and reporting a failed runtime environment update. These simulations do not replace tests with real ArtCraft applications or Discord.
+
+Live user rules can match the active tool, panel or view returned by the control channel. Linux does not emulate the entire Windows accessibility tree. Helper commands have bounded execution/output; a missing or stuck helper cannot block the main polling loop.

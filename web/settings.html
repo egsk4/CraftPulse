@@ -163,7 +163,7 @@
   </div>
 
   <section>
-    <div class="section-head"><div><h2>On Discord now</h2><p>What your friends see. It follows your tools, dialogs and documents on its own.</p></div></div>
+    <div class="section-head"><div><h2>Presence preview</h2><p>Preview your card and link buttons here. Discord may hide your own buttons from you.</p></div></div>
     <div class="panel">
       <div class="now">
         <div class="tile" id="art">–</div>
@@ -171,6 +171,7 @@
           <b id="preview-title">Nothing yet</b>
           <div class="line" id="preview-state">Open a Craft app to start sharing</div>
           <div class="time" id="preview-note"></div>
+          <div class="inline" id="preview-buttons" aria-label="Card link buttons"></div>
         </div>
       </div>
       <div class="try">
@@ -186,6 +187,7 @@
     <div class="panel">
       <label class="row"><span class="grow"><strong>Share my activity</strong><small>Turn everything on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Idle after</strong><small>Seconds without input; 0 turns idle status off</small></span><input id="idle-after" type="number" min="0" max="86400" step="1" value="300" style="width:100px"></label>
       <label class="row"><span class="grow"><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Show extra details</strong><small>Adds things like “Page 3 of 12” or the image size to the document line</small></span><input class="switch" id="details" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Check for updates</strong><small>Looks for new releases on GitHub. Nothing is installed automatically.</small></span><input class="switch" id="updates" type="checkbox"></label>
@@ -307,6 +309,12 @@ function drawHistory(list){
   $("history").innerHTML=list.length?list.slice(0,12).map(e=>`<div class="app" style="grid-template-columns:70px 110px 1fr"><span class="num muted">${new Date(e.at*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span><strong>${esc(e.app)}</strong><span>${esc(e.activity)} <span class="muted">· ${esc(e.document)}</span></span></div>`).join(""):`<div class="note" style="border-top:0">Nothing yet. Open a Craft app and it will show up here.</div>`;
 }
 function drawPreview(card){
+  const links=$("preview-buttons");links.replaceChildren();
+  const buttons=card?card.buttons:(config.buttons||[]).map(b=>[b.label,b.url]);
+  (buttons||[]).slice(0,2).forEach(([label,url])=>{
+    try{if(new URL(url).protocol!=="https:")return}catch{return}
+    const a=document.createElement("a");a.className="btn quiet";a.textContent=label;a.href=url;a.target="_blank";a.rel="noopener noreferrer";links.appendChild(a);
+  });
   const note=$("preview-note");
   if(!card){$("art").textContent="–";$("preview-title").textContent="Nothing yet";$("preview-state").textContent="Open a Craft app to start sharing";note.textContent="";return}
   $("art").textContent=(card.app_name||"A")[0];
@@ -321,6 +329,7 @@ setInterval(tick,1000);
 async function load(){
   config=await call("/api/settings");
   $("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;$("details").checked=config.show_details!==false;$("updates").checked=config.check_updates!==false;
+  $("idle-after").value=config.idle_after_secs??300;
   $("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");
   $("quiet").checked=!!config.quiet_hours;$("quiet-start").value=config.quiet_start||"22:00";$("quiet-end").value=config.quiet_end||"07:00";$("stream-pause").checked=!!config.pause_while_streaming;$("milestones").checked=!!config.milestones;
   $("details-template").value=config.details_template||"";$("state-template").value=config.state_template||"";
@@ -330,6 +339,9 @@ async function load(){
   setStatus("Running","ok");await refresh();
 }
 async function save(){
+  const idle=Number($("idle-after").value);
+  if(!Number.isInteger(idle)||idle<0||idle>86400){$("message").textContent="Idle timeout must be between 0 and 86400 seconds";return}
+  config.idle_after_secs=idle;
   config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;config.show_details=$("details").checked;config.check_updates=$("updates").checked;
   config.quiet_hours=$("quiet").checked;config.quiet_start=$("quiet-start").value||"22:00";config.quiet_end=$("quiet-end").value||"07:00";config.pause_while_streaming=$("stream-pause").checked;config.milestones=$("milestones").checked;
   config.details_template=$("details-template").value;config.state_template=$("state-template").value;
@@ -356,18 +368,24 @@ async function refresh(){
     setStatus("Running","ok");
   }catch(err){setStatus("Local connection error","bad");$("diagnostics").textContent=err.message}
 }
-$("enable-live").onclick=async()=>{
+async function enableLive(){
   const note=$("live-note");note.classList.remove("hidden");note.textContent="Working…";
-  try{
-    const r=await call("/api/live/enable",{method:"POST",body:"{}"});
-    const lines=r.lines.map(l=>`<code>${esc(l)}</code>`).join(" ");
-    note.innerHTML=r.applied
-      ?`Done. Close and reopen your Craft apps once. After that CraftPulse shows exactly what you're doing, including the photo name in LightCraft without opening the Info tab. PdfCraft has no setting for this: start it with <code>pdfcraft --control "%USERPROFILE%\\.pdfcraft-control.json"</code>.`
-      :`Add these to your environment (this system can't set them for you), then restart the apps: ${lines}`;
-  }catch(err){note.textContent=err.message}
-};
+  const r=await call("/api/live/enable",{method:"POST",body:"{}"});
+  const lines=r.lines.map(l=>`<code>${esc(l)}</code>`).join(" ");
+  if(r.platform==="linux"){
+    note.innerHTML=r.persisted
+      ?`Saved for future logins. ${r.applied?"The systemd user environment was updated too.":"The running session could not be updated."} Log out and back in, then reopen the ArtCraft launcher and apps. Sessions started from a shell may need these variables exported there: ${lines}. PdfCraft needs <code>pdfcraft --control ~/.pdfcraft-control.json</code>.`
+      :`Setup could not be saved. Add these variables to the environment that starts the ArtCraft launcher, then restart it and its apps: ${lines}`;
+  }else{
+    note.innerHTML=r.persisted
+      ?`Saved. Restart the ArtCraft launcher and your Craft apps. PdfCraft needs its control-file launch argument.`
+      :`Add these to the environment that starts your apps, then restart them: ${lines}`;
+  }
+  return r.persisted;
+}
+$("enable-live").onclick=async()=>{try{await enableLive()}catch(err){$("live-note").textContent=err.message}};
 async function answerFirstRun(yes){
-  if(yes){try{await call("/api/live/enable",{method:"POST",body:"{}"});const n=$("live-note");n.classList.remove("hidden");n.textContent="Done. Close and reopen your Craft apps once."}catch(e){}}
+  if(yes){try{if(!await enableLive())return}catch(e){$("live-note").textContent=e.message;return}}
   config.live_prompted=true;$("first-run").classList.add("hidden");await save();
 }
 $("fr-yes").onclick=()=>answerFirstRun(true);$("fr-no").onclick=()=>answerFirstRun(false);
@@ -398,7 +416,7 @@ $("layout-file").onchange=async e=>{
 };
 $("update-open").onclick=()=>call("/api/update/open",{method:"POST",body:"{}"});
 $("save").onclick=save;$("refresh").onclick=refresh;
-["enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
+["idle-after","enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
 $("test").onclick=async()=>{const r=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});drawPreview(r)};
 load().catch(e=>{setStatus("Local connection error","bad");$("diagnostics").textContent=e.message});
 setInterval(()=>{if(!document.hidden)refresh()},4000);

@@ -1,12 +1,6 @@
 name: Build CraftPulse
 
-on:
-  push:
-    paths:
-      - "craftpulse/**"
-  pull_request:
-    paths:
-      - "craftpulse/**"
+on: [push, pull_request]
 
 jobs:
   build:
@@ -31,18 +25,18 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libayatana-appindicator3-dev libxdo-dev libgtk-3-dev libx11-dev
+          sudo apt-get install -y libayatana-appindicator3-dev libxdo-dev libgtk-3-dev libx11-dev libwebkit2gtk-4.1-dev
       - name: Test
-        working-directory: craftpulse
-        run: cargo test --target ${{ matrix.target }}
+        working-directory: .
+        run: cargo test --locked --target ${{ matrix.target }}
       - name: Clippy
-        working-directory: craftpulse
-        run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
+        working-directory: .
+        run: cargo clippy --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Build
-        working-directory: craftpulse
-        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: .
+        run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
           name: craftpulse-${{ matrix.target }}
-          path: craftpulse/target/${{ matrix.target }}/release/craftpulse*
+          path: target/${{ matrix.target }}/release/craftpulse*

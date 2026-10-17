@@ -38,7 +38,7 @@ fn fake_discord_socket_receives_presence_and_clear_commands() {
         (activity_opcode, activity, clear_opcode, clear, close_opcode)
     });
 
-    let worker = RpcWorker::new();
+    let worker = RpcWorker::new("1558510318513033329".to_string());
     let card = PresenceCard {
         app_name: "PhotoCraft".to_string(),
         document: "Poster".to_string(),

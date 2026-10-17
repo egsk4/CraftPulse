@@ -9,8 +9,6 @@ use std::{
     time::Duration,
 };
 
-const APPLICATION_ID: &str = "1558510318513033329";
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PresenceCard {
     pub app_name: String,
@@ -37,11 +35,11 @@ pub struct RpcWorker {
 }
 
 impl RpcWorker {
-    pub fn new() -> Self {
+    pub fn new(application_id: String) -> Self {
         let (sender, receiver) = mpsc::channel();
         thread::Builder::new()
             .name("craftpulse-discord-rpc".to_string())
-            .spawn(move || run_rpc(receiver))
+            .spawn(move || run_rpc(receiver, application_id))
             .expect("could not start Discord RPC worker");
         Self { sender }
     }
@@ -72,13 +70,13 @@ impl RpcWorker {
 }
 
 /// Opens a fresh connection to the Discord desktop app, if it is running.
-fn connect() -> Option<DiscordIpcClient> {
-    let mut client = DiscordIpcClient::new(APPLICATION_ID).ok()?;
+fn connect(application_id: &str) -> Option<DiscordIpcClient> {
+    let mut client = DiscordIpcClient::new(application_id).ok()?;
     client.connect().ok()?;
     Some(client)
 }
 
-fn run_rpc(receiver: Receiver<Command>) {
+fn run_rpc(receiver: Receiver<Command>, application_id: String) {
     let mut client: Option<DiscordIpcClient> = None;
     while let Ok(command) = receiver.recv() {
         match command {
@@ -118,7 +116,7 @@ fn run_rpc(receiver: Receiver<Command>) {
                     if let Some(mut dead) = client.take() {
                         let _ = dead.close();
                     }
-                    if let Some(fresh) = connect() {
+                    if let Some(fresh) = connect(&application_id) {
                         client = Some(fresh);
                         ok = client
                             .as_mut()

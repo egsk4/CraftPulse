@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Restart reminders: Windows toast, macOS notification, Linux D-Bus.
+notify-rust = "4"
 dirs = "6"
 discord-rich-presence = "0.2.5"
 getrandom = "0.3"
@@ -26,9 +28,13 @@ ureq = "2"
 toml_edit = { version = "0.22", features = ["serde"] }
 tray-icon = "0.21"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+wry = "0.53"
+# Idle time on Wayland (ext-idle-notify-v1). Pure Rust, no system library needed.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
 [target.'cfg(windows)'.dependencies]
-# Windows toast notifications (restart reminders).
-notify-rust = { version = "4", default-features = false }
 # Small settings popup (a borderless WebView2 window) above the tray icon.
 wry = "0.53"
 windows = { version = "0.58", features = [

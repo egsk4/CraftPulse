@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CraftPulse
+Comment=Discord Rich Presence for ArtCraft apps
+Exec=craftpulse
+Icon=craftpulse
+Terminal=false
+Categories=Utility;

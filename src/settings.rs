@@ -1,11 +1,12 @@
 use crate::{
     config::{
-        AppConfig, CardButton, Config, SharedConfig, DEFAULT_DETAILS_TEMPLATE,
+        AppConfig, CardButton, Config, RawCardButton, SharedConfig, DEFAULT_DETAILS_TEMPLATE,
         DEFAULT_STATE_TEMPLATE,
     },
     presence::PresenceCard,
     startup,
 };
+use chrono::NaiveTime;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,6 +20,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 #[derive(Debug, Clone, Deserialize)]
 struct SettingsUpdate {
     enabled: Option<bool>,
+    idle_after_secs: Option<u64>,
     hide_project_name: Option<bool>,
     hide_patterns: Option<Vec<String>>,
     action: Option<String>,
@@ -28,10 +30,12 @@ struct SettingsUpdate {
     theme: Option<String>,
     check_updates: Option<bool>,
     show_details: Option<bool>,
-    buttons: Option<Vec<CardButton>>,
+    buttons: Option<Vec<RawCardButton>>,
     quiet_hours: Option<bool>,
-    quiet_start: Option<String>,
-    quiet_end: Option<String>,
+    #[serde(default, deserialize_with = "crate::quiet::hh_mm::deserialize_opt")]
+    quiet_start: Option<NaiveTime>,
+    #[serde(default, deserialize_with = "crate::quiet::hh_mm::deserialize_opt")]
+    quiet_end: Option<NaiveTime>,
     pause_while_streaming: Option<bool>,
     milestones: Option<bool>,
     details_template: Option<String>,
@@ -42,6 +46,7 @@ struct SettingsUpdate {
 #[derive(Debug, Clone, Serialize)]
 struct SettingsResponse {
     enabled: bool,
+    idle_after_secs: u64,
     hide_project_name: bool,
     hide_patterns: Vec<String>,
     action: String,
@@ -53,8 +58,10 @@ struct SettingsResponse {
     show_details: bool,
     buttons: Vec<CardButton>,
     quiet_hours: bool,
-    quiet_start: String,
-    quiet_end: String,
+    #[serde(with = "crate::quiet::hh_mm")]
+    quiet_start: NaiveTime,
+    #[serde(with = "crate::quiet::hh_mm")]
+    quiet_end: NaiveTime,
     pause_while_streaming: bool,
     milestones: bool,
     details_template: String,
@@ -138,6 +145,7 @@ fn handle_request(
             let config = config.lock().unwrap_or_else(|e| e.into_inner());
             let body = serde_json::to_string(&SettingsResponse {
                 enabled: config.enabled,
+                idle_after_secs: config.idle_after_secs,
                 hide_project_name: config.hide_project_name,
                 hide_patterns: config.hide_patterns.clone(),
                 action: config.action.clone(),
@@ -149,8 +157,8 @@ fn handle_request(
                 show_details: config.show_details,
                 buttons: config.buttons.clone(),
                 quiet_hours: config.quiet_hours,
-                quiet_start: config.quiet_start.clone(),
-                quiet_end: config.quiet_end.clone(),
+                quiet_start: config.quiet_start,
+                quiet_end: config.quiet_end,
                 pause_while_streaming: config.pause_while_streaming,
                 milestones: config.milestones,
                 details_template: config.details_template.clone(),
@@ -185,46 +193,53 @@ fn handle_request(
                         .with_status_code(StatusCode(400));
                 }
             }
-            if let Some(buttons) = &update.buttons {
-                if buttons.len() > 2 {
+            let buttons = match update
+                .buttons
+                .map(|raw| {
+                    raw.into_iter()
+                        .map(CardButton::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()
+            {
+                Ok(Some(buttons)) if buttons.len() > 2 => {
                     return Response::from_string("Discord allows at most two buttons")
                         .with_status_code(StatusCode(400));
                 }
-                if let Some(bad) = buttons.iter().find(|button| !button.is_valid()) {
-                    return Response::from_string(format!(
-                        "Button “{}” needs a label of up to 32 characters and a link starting with https://",
-                        bad.label
-                    ))
-                    .with_status_code(StatusCode(400));
+                Ok(buttons) => buttons,
+                Err(message) => {
+                    return Response::from_string(message).with_status_code(StatusCode(400));
                 }
-            }
-            for time in [&update.quiet_start, &update.quiet_end].into_iter().flatten() {
-                if crate::quiet::parse_hhmm(time).is_none() {
-                    return Response::from_string("Quiet hours need times like 22:00")
-                        .with_status_code(StatusCode(400));
-                }
+            };
+            if update.idle_after_secs.is_some_and(|v| v > crate::detection::MAX_IDLE_SECS) {
+                return Response::from_string("Idle timeout must be between 0 and 86400 seconds").with_status_code(StatusCode(400));
             }
             let mut config = config.lock().unwrap_or_else(|e| e.into_inner());
+            let launch_changed = update.launch_at_login.is_some_and(|v| v != config.launch_at_login);
+            if let Some(value) = update.idle_after_secs { config.idle_after_secs = value; }
             if let Some(value) = update.quiet_hours {
                 config.quiet_hours = value;
             }
             if let Some(value) = update.quiet_start {
-                config.quiet_start = value.trim().to_string();
+                config.quiet_start = value;
             }
             if let Some(value) = update.quiet_end {
-                config.quiet_end = value.trim().to_string();
+                config.quiet_end = value;
             }
             if let Some(value) = update.pause_while_streaming {
                 config.pause_while_streaming = value;
             }
+            if let Some(value) = update.check_updates {
+                config.check_updates = value;
+            }
+            if let Some(value) = update.show_details {
+                config.show_details = value;
+            }
             if let Some(value) = update.milestones {
                 config.milestones = value;
             }
-            if let Some(value) = update.buttons {
-                config.buttons = value
-                    .into_iter()
-                    .map(|b| CardButton { label: b.label.trim().to_string(), url: b.url.trim().to_string() })
-                    .collect();
+            if let Some(buttons) = buttons {
+                config.buttons = buttons;
             }
             let template = |value: String, default: &str| {
                 let value: String = value.chars().take(200).collect();
@@ -282,14 +297,17 @@ fn handle_request(
                 return Response::from_string(error).with_status_code(StatusCode(500));
             }
             drop(config);
-            if let Err(error) = startup::set_enabled(launch_at_login) {
-                return Response::from_string(error).with_status_code(StatusCode(500));
+            if launch_changed {
+                if let Err(error) = startup::set_enabled(launch_at_login) {
+                    return Response::from_string(error).with_status_code(StatusCode(500));
+                }
             }
             json_response(r#"{"saved":true}"#.to_string())
         }
         (&Method::Get, "/api/diagnostics") => {
             let response = serde_json::json!({
                 "platform": std::env::consts::OS,
+                "idle_seconds": Some(crate::detection::LAST_IDLE_SECONDS.load(std::sync::atomic::Ordering::Relaxed)).filter(|seconds| *seconds != u64::MAX),
                 "config_path": Config::path().to_string_lossy(),
                 "hints_path": Config::path().parent().unwrap_or_else(|| std::path::Path::new(".")).join("hints").to_string_lossy(),
                 "discord_rpc": "Application ID 1558510318513033329",
@@ -314,8 +332,8 @@ fn handle_request(
         (&Method::Post, "/api/live/enable") => {
             let config = config.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let names: Vec<&str> = config.apps.keys().map(String::as_str).collect();
-            let (applied, lines) = crate::control::enable_environment(&config, &names);
-            json_response(serde_json::json!({"applied": applied, "lines": lines}).to_string())
+            let (applied, persisted, lines) = crate::control::enable_environment(&config, &names);
+            json_response(serde_json::json!({"applied": applied, "persisted": persisted, "lines": lines, "platform": std::env::consts::OS}).to_string())
         }
         (&Method::Get, "/api/pause") => json_response(
             serde_json::json!({"paused": crate::pause::is_paused(), "until": crate::pause::until(), "auto": crate::pause::auto()}).to_string(),

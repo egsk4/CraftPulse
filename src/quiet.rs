@@ -1,18 +1,36 @@
 //! Quiet hours: automatically stop sharing during a daily time window.
 
 use crate::config::Config;
-use chrono::Timelike;
+use chrono::NaiveTime;
 
-/// "22:30" -> minutes since midnight.
-pub fn parse_hhmm(text: &str) -> Option<u32> {
-    let (hours, minutes) = text.trim().split_once(':')?;
-    let (hours, minutes): (u32, u32) = (hours.parse().ok()?, minutes.parse().ok()?);
-    (hours < 24 && minutes < 60).then_some(hours * 60 + minutes)
+/// Serde format for a time of day written as "22:30" (config.toml and the settings API).
+pub mod hh_mm {
+    use chrono::NaiveTime;
+    use serde::{de::Error, Deserialize, Deserializer, Serializer};
+
+    const FORMAT: &str = "%H:%M";
+
+    pub fn serialize<S: Serializer>(time: &NaiveTime, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&time.format(FORMAT))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        NaiveTime::parse_from_str(text.trim(), FORMAT).map_err(Error::custom)
+    }
+
+    pub fn deserialize_opt<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<NaiveTime>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|text| NaiveTime::parse_from_str(text.trim(), FORMAT).map_err(Error::custom))
+            .transpose()
+    }
 }
 
-/// Whether `now` (minutes since midnight) falls in `start..end`. The window
-/// may cross midnight (22:00 to 07:00). Equal start and end means no window.
-pub fn in_window(now: u32, start: u32, end: u32) -> bool {
+/// Whether `now` falls in `start..end`. The window may cross midnight
+/// (22:00 to 07:00). Equal start and end means no window.
+pub fn in_window(now: NaiveTime, start: NaiveTime, end: NaiveTime) -> bool {
     if start == end {
         false
     } else if start < end {
@@ -23,38 +41,39 @@ pub fn in_window(now: u32, start: u32, end: u32) -> bool {
 }
 
 pub fn is_quiet(config: &Config) -> bool {
-    if !config.quiet_hours {
-        return false;
-    }
-    let (Some(start), Some(end)) = (
-        parse_hhmm(&config.quiet_start),
-        parse_hhmm(&config.quiet_end),
-    ) else {
-        return false;
-    };
-    let now = chrono::Local::now();
-    in_window(now.hour() * 60 + now.minute(), start, end)
+    config.quiet_hours
+        && in_window(
+            chrono::Local::now().time(),
+            config.quiet_start,
+            config.quiet_end,
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn at(text: &str) -> NaiveTime {
+        NaiveTime::parse_from_str(text, "%H:%M").unwrap()
+    }
+
     #[test]
     fn parses_times() {
-        assert_eq!(parse_hhmm("07:30"), Some(450));
-        assert_eq!(parse_hhmm("24:00"), None);
-        assert_eq!(parse_hhmm("7"), None);
+        assert!(NaiveTime::parse_from_str("24:00", "%H:%M").is_err());
+        assert!(NaiveTime::parse_from_str("7", "%H:%M").is_err());
+        let config: Config = toml_edit::de::from_str("quiet_start = \"07:30\"").unwrap();
+        assert_eq!(config.quiet_start, at("07:30"));
+        assert!(toml_edit::de::from_str::<Config>("quiet_start = \"25:00\"").is_err());
     }
 
     #[test]
     fn windows_including_overnight() {
-        let (start, end) = (parse_hhmm("22:00").unwrap(), parse_hhmm("07:00").unwrap());
-        assert!(in_window(parse_hhmm("23:30").unwrap(), start, end));
-        assert!(in_window(parse_hhmm("03:00").unwrap(), start, end));
-        assert!(!in_window(parse_hhmm("12:00").unwrap(), start, end));
-        assert!(in_window(600, 540, 1020));
-        assert!(!in_window(1100, 540, 1020));
-        assert!(!in_window(600, 600, 600));
+        let (start, end) = (at("22:00"), at("07:00"));
+        assert!(in_window(at("23:30"), start, end));
+        assert!(in_window(at("03:00"), start, end));
+        assert!(!in_window(at("12:00"), start, end));
+        assert!(in_window(at("10:00"), at("09:00"), at("17:00")));
+        assert!(!in_window(at("18:20"), at("09:00"), at("17:00")));
+        assert!(!in_window(at("10:00"), at("10:00"), at("10:00")));
     }
 }
