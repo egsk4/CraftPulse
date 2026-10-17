@@ -73,3 +73,20 @@ The stripped executable was **6.46 MiB**. This includes startup in a short sampl
 WebView child processes and the compositor are excluded. An earlier run before
 background polling backoff observed about 6.84% mean CPU under the same setup.
 These are observations from this container, not targets for every system.
+
+### Published release verification
+
+[v0.5.0 release CI](https://github.com/egsk4/CraftPulse/actions/runs/39049795128)
+passed the Ubuntu, Windows, macOS and Arch gates before publishing the official
+release. Local Linux validation passed 192 default tests; the Wayland idle and
+native WebKit integration tests were run separately and passed. The real
+PhotoCraft API integration remains an optional, separately invoked test.
+
+All four public binary archives were downloaded and checked against SHA256SUMS,
+archive integrity, expected entries and executable format/mode. The downloaded
+Linux executable also passed the extended simulated AppImage/Discord smoke test,
+including settings authentication, rules, per-app idle, update channels, resource
+samples, report export, duplicate-instance exit, failed-save rollback and recovery.
+Windows/macOS results are CI coverage; interactive testing on those desktops was
+not performed in this environment. This evidence does not imply zero remaining
+bugs or support for every ArtCraft app/compositor/version combination.
