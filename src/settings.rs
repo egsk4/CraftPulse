@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        AppConfig, CardButton, Config, RawCardButton, SharedConfig, DEFAULT_DETAILS_TEMPLATE,
-        DEFAULT_STATE_TEMPLATE,
+        ActivityRule, AppConfig, CardButton, Config, RawCardButton, SharedConfig,
+        DEFAULT_DETAILS_TEMPLATE, DEFAULT_STATE_TEMPLATE,
     },
     presence::PresenceCard,
     startup,
@@ -29,6 +29,8 @@ struct SettingsUpdate {
     timer_mode: Option<String>,
     theme: Option<String>,
     check_updates: Option<bool>,
+    include_prereleases: Option<bool>,
+    rules: Option<Vec<ActivityRule>>,
     show_details: Option<bool>,
     buttons: Option<Vec<RawCardButton>>,
     quiet_hours: Option<bool>,
@@ -55,6 +57,8 @@ struct SettingsResponse {
     timer_mode: String,
     theme: String,
     check_updates: bool,
+    include_prereleases: bool,
+    rules: Vec<ActivityRule>,
     show_details: bool,
     buttons: Vec<CardButton>,
     quiet_hours: bool,
@@ -154,6 +158,8 @@ fn handle_request(
                 timer_mode: config.timer_mode.clone(),
                 theme: config.theme.clone(),
                 check_updates: config.check_updates,
+                include_prereleases: config.include_prereleases,
+                rules: config.rules.clone(),
                 show_details: config.show_details,
                 buttons: config.buttons.clone(),
                 quiet_hours: config.quiet_hours,
@@ -214,7 +220,18 @@ fn handle_request(
             if update.idle_after_secs.is_some_and(|v| v > crate::detection::MAX_IDLE_SECS) {
                 return Response::from_string("Idle timeout must be between 0 and 86400 seconds").with_status_code(StatusCode(400));
             }
-            let mut config = config.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(rules) = &update.rules {
+                if rules.len() > 100 || rules.iter().any(|rule| !crate::APP_NAMES.contains(&rule.app.as_str()) || rule.element.trim().is_empty() || rule.activity.trim().is_empty() || rule.element.chars().count() > 100 || rule.activity.chars().count() > 100) {
+                    return Response::from_string("Use up to 100 rules with a supported app and nonempty control/activity text of at most 100 characters").with_status_code(StatusCode(400));
+                }
+            }
+            if update.apps.as_ref().is_some_and(|apps| apps.values().any(|app| app.idle_after_secs.is_some_and(|seconds| seconds > crate::detection::MAX_IDLE_SECS))) {
+                return Response::from_string("Per-app idle timeout must be between 0 and 86400 seconds").with_status_code(StatusCode(400));
+            }
+            let mut guard = config.lock().unwrap_or_else(|e| e.into_inner());
+            let mut config = guard.clone();
+            if let Some(value) = update.include_prereleases { config.include_prereleases = value; }
+            if let Some(value) = update.rules { config.rules = value; }
             let launch_changed = update.launch_at_login.is_some_and(|v| v != config.launch_at_login);
             if let Some(value) = update.idle_after_secs { config.idle_after_secs = value; }
             if let Some(value) = update.quiet_hours {
@@ -296,7 +313,9 @@ fn handle_request(
             if let Err(error) = config.save() {
                 return Response::from_string(error).with_status_code(StatusCode(500));
             }
-            drop(config);
+            config.load_error = None;
+            *guard = config;
+            drop(guard);
             if launch_changed {
                 if let Err(error) = startup::set_enabled(launch_at_login) {
                     return Response::from_string(error).with_status_code(StatusCode(500));
@@ -304,13 +323,33 @@ fn handle_request(
             }
             json_response(r#"{"saved":true}"#.to_string())
         }
+        (&Method::Post, "/api/config/restore") => {
+            let mut guard = config.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(error) = Config::restore_backup() { return Response::from_string(error).with_status_code(StatusCode(400)); }
+            *guard = Config::load_or_create();
+            json_response(r#"{"restored":true}"#.into())
+        }
+        (&Method::Get, "/api/monitor") => json_response(serde_json::to_string(&crate::monitor::sample()).unwrap_or_else(|_| "{}".into())),
+        (&Method::Get, "/api/support") => {
+            let cfg = config.lock().unwrap_or_else(|e| e.into_inner());
+            json_response(serde_json::json!({
+                "version": crate::update::current_version(), "platform": std::env::consts::OS,
+                "architecture": std::env::consts::ARCH, "sharing_enabled": cfg.enabled,
+                "config_error": cfg.load_error.is_some(), "resources": crate::monitor::sample(),
+                "session_type": safe_session("XDG_SESSION_TYPE"),
+                "desktop": safe_session("XDG_CURRENT_DESKTOP"),
+                "privacy": "No project names, paths, tokens, rules, buttons or event logs included"
+            }).to_string())
+        }
         (&Method::Get, "/api/diagnostics") => {
             let response = serde_json::json!({
                 "platform": std::env::consts::OS,
+                "config_error": config.lock().unwrap_or_else(|e| e.into_inner()).load_error,
+                "resources": crate::monitor::sample(),
                 "idle_seconds": Some(crate::detection::LAST_IDLE_SECONDS.load(std::sync::atomic::Ordering::Relaxed)).filter(|seconds| *seconds != u64::MAX),
                 "config_path": Config::path().to_string_lossy(),
                 "hints_path": Config::path().parent().unwrap_or_else(|| std::path::Path::new(".")).join("hints").to_string_lossy(),
-                "discord_rpc": "Application ID 1558510318513033329",
+                "discord_rpc": "See connection events below; preview is the last successfully sent card",
                 "last_presence": *preview.lock().unwrap_or_else(|e| e.into_inner()),
             });
             json_response(response.to_string())
@@ -443,4 +482,13 @@ fn json_response(body: String) -> Response<std::io::Cursor<Vec<u8>>> {
 fn html_response(body: &str, content_type: &str) -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_string(body)
         .with_header(Header::from_bytes("Content-Type", content_type).unwrap())
+}
+
+fn safe_session(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| {
+        value.len() <= 80
+            && value
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ':' | '-' | '_' | '.'))
+    })
 }

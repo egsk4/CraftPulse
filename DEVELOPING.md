@@ -135,8 +135,8 @@ The server binds to `127.0.0.1` on a random port. The URL, including a random to
 ## Discord behaviour
 
 - Application ID `1558510318513033329` (`application_id` in `config.toml`, also a constant in `presence.rs`).
-- Updates are limited to 4 per 20 seconds (`rate_limit.rs`). A changed card is sent at most every 5 seconds, and an unchanged one is refreshed every 30 seconds.
-- If Discord isn't available, sending is retried every 30 seconds for up to 5 minutes after a Craft app appears.
+- Updates are limited to 4 per 20 seconds (`rate_limit.rs`). A changed card is sent at most every 5 seconds, and an unchanged one is refreshed every 10 seconds.
+- If Discord isn't available, sending is retried every 3 seconds without a cutoff; RPC requests time out after 4 seconds.
 - Document names are truncated to 128 characters, and states to 100 plus the `in <App> — ` prefix.
 
 ## Debugging
@@ -209,7 +209,7 @@ Live user rules can match the active tool, panel or view returned by the control
 
 ## Creating a release
 
-The current release is **v0.4.2 alpha**. GitHub Actions publishes the release and
+The current release is **v0.5.0**. GitHub Actions publishes the release and
 four executable archives only after the cross-platform and Arch checks pass.
 
 1. Update the package version in `Cargo.toml` and its root entry in `Cargo.lock`.
@@ -218,11 +218,11 @@ four executable archives only after the cross-platform and Arch checks pass.
    `cargo clippy --locked --all-targets -- -D warnings`. For Linux GUI and
    AppImage checks, run `bash scripts/check_arch.sh` on Arch as an ordinary user.
 4. Commit and push to main, then tag that exact commit. Tags follow the existing
-   naming convention, for example `CraftPulse-v0.4.2`, and must match Cargo.toml.
+   naming convention, for example `CraftPulse-v0.5.0`, and must match Cargo.toml.
 
 ```sh
-git tag -s CraftPulse-v0.4.2 -m "CraftPulse v0.4.2 alpha"
-git push origin CraftPulse-v0.4.2
+git tag -s CraftPulse-v0.5.0 -m "CraftPulse v0.5.0"
+git push origin CraftPulse-v0.5.0
 ```
 
 `.github/workflows/release.yml` calls the reusable build and Arch workflows.
@@ -230,7 +230,7 @@ git push origin CraftPulse-v0.4.2
 with its license, preserves executable permissions in Unix archives, and writes
 `SHA256SUMS.txt`. The publication job uses GitHub's job-scoped token with
 `contents: write`; no personal access token is required. Builds and tests use
-read-only repository access. The release is marked as an alpha prerelease.
+read-only repository access. Tags without a suffix publish an official release; tags with a hyphenated version suffix publish a prerelease.
 
 Publication keeps an existing release's downloads and notes unchanged. Release
 runs for the same tag are serialized to avoid concurrent publication.
@@ -251,3 +251,20 @@ Windows idle is latched for the selected ArtCraft process while another app has
 focus. Global input in Discord must not resume its presence. Focus returning to
 ArtCraft, selecting a different app, closing the app or disabling idle resets the
 latch. Regression tests cover these transitions in `src/detection.rs`.
+
+## Stable-release reliability checks
+
+- `storage::atomic_write` syncs a same-directory temporary file before replacing its destination; `tempfile` handles replacement on Windows too. Config saves keep a valid previous version in `config.toml.bak`. Stats use the same atomic-write helper.
+- Failed settings saves keep the running config unchanged. Invalid startup configs disable sharing and show a warning. Explicit backup restoration preserves the old file and leaves sharing disabled.
+- `instance` holds an OS file lock for the app lifetime and explicitly unlocks on drop. Test it with a second instance and after normal exit. Never delete the lock file to force another running instance.
+- Usage counting must require enabled sharing, an enabled app, nonidle input, no manual pause and no automatic pause. Test cards must not bypass global disable or pause.
+- Per-app `idle_after_secs` overrides the global threshold; null/omitted means inherit. The API validates 0–86400 seconds.
+- Activity rules are limited to 100, with a supported app and 1–100 character control/activity text. The editor preserves list priority. General settings autosave excludes unsaved rule edits.
+- The resource monitor uses existing `sysinfo` support and samples only this PID every five seconds. Its CPU percentage is per logical core and excludes WebView children. The first sample is marked unavailable until a CPU interval exists.
+- Support export uses an allowlist of fields, never the full config or event log. Do not add document names, user paths, tokens or private button URLs.
+
+`scripts/smoke_linux.py` verifies rules, app idle overrides, update channels, monitor data, sanitized report fields, second-instance exit, failed-save rollback and config backup restoration, alongside the existing simulated AppImage/Discord checks. Native WebKit tests exercise the rendered rule controls and monitor UI. Run `scripts/check_arch.sh` for the complete Arch validation including Sway idle and GUI checks.
+
+The detection loop backs off from 500 ms to 2 seconds when no app is detected or sharing is disabled. Settings changes and newly started apps may take up to that interval to reach the detection loop.
+
+For performance measurements, use an optimized build with isolated config, update checks disabled, no ArtCraft app or Discord and the settings window closed. Allow startup to settle, then collect at least six monitor samples five seconds apart. Report the desktop, build, sampling window and excluded helper processes; avoid universal RAM/CPU promises from one machine.

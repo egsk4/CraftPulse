@@ -5,9 +5,11 @@ mod control;
 mod detection;
 mod hints;
 mod history;
+mod instance;
 #[cfg(target_os = "linux")]
 mod linux;
 mod milestones;
+mod monitor;
 mod notify;
 mod pause;
 mod popup;
@@ -18,6 +20,7 @@ mod rate_limit;
 mod settings;
 mod startup;
 mod stats;
+mod storage;
 #[cfg(test)]
 mod tests;
 mod tray;
@@ -54,6 +57,15 @@ const RPC_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 const RPC_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 
 fn main() {
+    let _instance = match instance::acquire() {
+        Ok(Some(instance)) => instance,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Could not lock CraftPulse instance: {error}");
+            return;
+        }
+    };
+    monitor::start();
     let shared_config = Arc::new(Mutex::new(Config::load_or_create()));
     let log = Arc::new(Mutex::new(Vec::<String>::new()));
     let preview = Arc::new(Mutex::new(None));
@@ -106,6 +118,7 @@ fn main() {
     let mut test_override: Option<(PresenceCard, Instant)> = None;
     let mut rate_limiter = RpcRateLimiter::default();
     let mut last_poll = Instant::now();
+    let mut poll_interval = POLL_INTERVAL;
     let mut was_idle = false;
     let mut last_titles: Vec<String> = Vec::new();
     let mut last_unknown: Vec<String> = Vec::new();
@@ -128,8 +141,8 @@ fn main() {
             break;
         }
         let elapsed = last_poll.elapsed();
-        if elapsed < POLL_INTERVAL {
-            thread::sleep(POLL_INTERVAL - elapsed);
+        if elapsed < poll_interval {
+            thread::sleep(poll_interval - elapsed);
         }
         let loop_seconds = last_poll.elapsed().as_secs_f64().min(2.0);
         last_poll = Instant::now();
@@ -141,7 +154,20 @@ fn main() {
         };
         detector.set_rules(&current_config.rules);
         detector.idle_after_secs = current_config.idle_after_secs;
+        detector.idle_overrides = current_config
+            .apps
+            .iter()
+            .filter_map(|(name, app)| {
+                app.idle_after_secs
+                    .map(|seconds| (name.to_ascii_lowercase(), seconds))
+            })
+            .collect();
         let detected = detector.detect(&APP_NAMES);
+        poll_interval = if current_config.enabled && detected.is_some() {
+            POLL_INTERVAL
+        } else {
+            Duration::from_secs(2)
+        };
         let auto_activity = detector.activity.clone();
         let idle = detector.idle;
         if idle != was_idle {
@@ -313,26 +339,36 @@ fn main() {
             Some(card)
         });
         // Count time in each app (only while you're active and sharing isn't paused).
-        if let Some(name) = in_use_app.as_ref().filter(|_| !idle && !pause::is_paused()) {
-            stat_carry += loop_seconds;
-            if stat_carry >= 1.0 {
-                let whole = stat_carry as u64;
-                stat_carry -= whole as f64;
-                stats::record(name, stats::day_of(now_unix), whole);
-            }
-        }
-        if last_stats_save.elapsed() >= Duration::from_secs(60) {
-            last_stats_save = Instant::now();
-            stats::save();
-        }
-        // Paused from the tray or settings: show nothing.
-        let auto_pause: Option<&'static str> = if quiet::is_quiet(&current_config) {
+        let auto_pause = if quiet::is_quiet(&current_config) {
             Some("quiet hours")
         } else if current_config.pause_while_streaming && detector.streaming {
             Some("a streaming or recording app is running")
         } else {
             None
         };
+        if let Some(name) = in_use_app.as_ref().filter(|name| {
+            stats::should_count(
+                current_config.enabled,
+                current_config.app_config(name).enabled,
+                idle,
+                pause::is_paused(),
+                auto_pause.is_some(),
+            )
+        }) {
+            stat_carry += loop_seconds;
+            if stat_carry >= 1.0 {
+                let whole = stat_carry as u64;
+                stat_carry -= whole as f64;
+                stats::record(name, stats::day_of(now_unix), whole);
+            }
+        } else {
+            stat_carry = 0.0;
+        }
+        if last_stats_save.elapsed() >= Duration::from_secs(60) {
+            last_stats_save = Instant::now();
+            stats::save();
+        }
+        // Paused from the tray or settings: show nothing.
         pause::set_auto(auto_pause);
         if auto_pause != last_auto_pause {
             last_auto_pause = auto_pause;
@@ -373,11 +409,17 @@ fn main() {
             test_override = None;
         }
 
-        let active_card = test_override
-            .as_ref()
-            .map(|(card, _)| card.clone())
-            .or(next_presence);
+        let active_card = if !current_config.enabled || pause::is_paused() || auto_pause.is_some() {
+            test_override = None;
+            None
+        } else {
+            test_override
+                .as_ref()
+                .map(|(card, _)| card.clone())
+                .or(next_presence)
+        };
         if active_card.is_none() {
+            *preview.lock().unwrap_or_else(|e| e.into_inner()) = None;
             if last_presence.is_some() && rate_limiter.try_acquire(Instant::now()) {
                 rpc.clear();
                 last_presence = None;
@@ -420,6 +462,7 @@ fn main() {
                     }
                     discord_unavailable_logged = true;
                     last_presence = None;
+                    *preview.lock().unwrap_or_else(|e| e.into_inner()) = None;
                     if timed_out {
                         push_log(&log, "Discord RPC timed out after 4 seconds");
                         rpc = RpcWorker::new(application_id.clone());

@@ -1,6 +1,6 @@
 [package]
 name = "craftpulse"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 build = "src/build.rs"
 description = "Discord Rich Presence for the ArtCraft creative apps"
@@ -11,6 +11,7 @@ name = "craftpulse"
 path = "src/main.rs"
 
 [dependencies]
+tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Restart reminders: Windows toast, macOS notification, Linux D-Bus.
 notify-rust = "4"

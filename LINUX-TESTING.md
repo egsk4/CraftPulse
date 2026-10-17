@@ -1,6 +1,6 @@
 # Linux compatibility and testing
 
-CraftPulse 0.4.2 supports ArtCraft AppImage payloads launched directly or from
+CraftPulse 0.5.0 supports ArtCraft AppImage payloads launched directly or from
 ArtCraft Launcher. Detection groups helper processes with their application and
 preserves the focused child's window information. The launcher itself is not
 reported as a creative app.
@@ -56,3 +56,9 @@ Those AppImages were extracted because the host has no FUSE; installation
 through the offline launcher was not tested. These results do not certify
 every desktop, ArtCraft release or kernel. An Arch container shares its host's
 kernel. See this repository's Actions runs for the new integration's CI results.
+
+## v0.5.0 stable-release checks
+
+The default suite covers single-instance locking, atomic replacement, backup preservation, invalid startup config fail-closed behavior, rule/idle persistence, update-channel filtering and all usage-counting gates. The smoke test also checks recovery and transaction behavior through the actual local HTTP server. These simulated AppImage and Discord fixtures do not replace testing with every ArtCraft app or desktop.
+
+The built-in resource monitor measures only the CraftPulse process. Native WebView child processes are excluded. An optimized Debian/headless-Sway measurement is recorded below when available; no equivalent Windows/macOS performance measurement has been made in this environment.

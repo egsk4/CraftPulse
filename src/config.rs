@@ -31,6 +31,7 @@ pub struct Config {
     pub timer_mode: String,
     /// Look for newer releases on GitHub.
     pub check_updates: bool,
+    pub include_prereleases: bool,
     /// Add extras like "Page 3 of 12" or image size to the document line.
     pub show_details: bool,
     /// Up to two link buttons on the card.
@@ -56,6 +57,8 @@ pub struct Config {
     pub rules: Vec<ActivityRule>,
     #[serde(skip)]
     last_modified: Option<SystemTime>,
+    #[serde(skip)]
+    pub load_error: Option<String>,
 }
 
 /// Shows `activity` while the button/tab whose name starts with `element`
@@ -116,6 +119,7 @@ pub struct ActivityRule {
 #[serde(default)]
 pub struct AppConfig {
     pub enabled: bool,
+    pub idle_after_secs: Option<u64>,
     pub hide_project_name: Option<bool>,
     pub action: Option<String>,
     pub large_image_key: Option<String>,
@@ -160,6 +164,7 @@ impl Default for Config {
             live_prompted: false,
             timer_mode: "session".to_string(),
             check_updates: true,
+            include_prereleases: false,
             show_details: true,
             buttons: Vec::new(),
             quiet_hours: false,
@@ -173,6 +178,7 @@ impl Default for Config {
             apps,
             rules: Vec::new(),
             last_modified: None,
+            load_error: None,
         }
     }
 }
@@ -181,6 +187,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            idle_after_secs: None,
             hide_project_name: None,
             action: None,
             large_image_key: None,
@@ -222,20 +229,33 @@ impl Config {
     }
 
     pub fn load_or_create() -> Self {
-        let path = Self::path();
+        Self::load_from(&Self::path())
+    }
+
+    fn load_from(path: &Path) -> Self {
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
         if !path.exists() {
-            let config = Self::default();
-            let _ = config.save();
+            let mut config = Self::default();
+            if config.save_to(path).is_err() {
+                config.enabled = false;
+                config.hide_project_name = true;
+                config.load_error = Some(
+                    "Could not create config.toml. Sharing is off; check directory permissions."
+                        .into(),
+                );
+            }
             return config;
         }
-        let mut config = fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| de::from_str::<Self>(&text).ok())
-            .unwrap_or_default();
-        config.last_modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
+        let mut config = match fs::read_to_string(path).map_err(|e| e.to_string())
+            .and_then(|text| de::from_str::<Self>(&text).map_err(|_| "Invalid config.toml".to_string())) {
+            Ok(config) => config,
+            Err(_) => Self { enabled: false, hide_project_name: true,
+                load_error: Some("Configuration could not be loaded. Sharing is off. Repair config.toml or restore its backup in settings.".into()),
+                ..Self::default() },
+        };
+        config.last_modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         config
     }
 
@@ -292,6 +312,27 @@ impl Config {
             .unwrap_or_default()
     }
 
+    pub fn restore_backup() -> Result<(), String> {
+        let path = Self::path();
+        let text = fs::read_to_string(path.with_extension("toml.bak"))
+            .map_err(|_| "No readable config.toml.bak found".to_string())?;
+        let mut restored: Self =
+            de::from_str(&text).map_err(|_| "Backup is invalid".to_string())?;
+        restored.enabled = false;
+        if let Ok(old) = fs::read(&path) {
+            let mut preserved = tempfile::Builder::new()
+                .prefix("config-recovered-")
+                .suffix(".toml")
+                .tempfile_in(path.parent().ok_or("Missing config directory")?)
+                .map_err(|e| e.to_string())?;
+            std::io::Write::write_all(&mut preserved, &old).map_err(|e| e.to_string())?;
+            preserved.keep().map_err(|e| e.to_string())?;
+        }
+        crate::storage::atomic_write(&path, text.as_bytes())?;
+        restored.save()?;
+        Ok(())
+    }
+
     pub fn save(&self) -> Result<(), String> {
         self.save_to(&Self::path())
     }
@@ -300,10 +341,11 @@ impl Config {
         fs::create_dir_all(path.parent().ok_or("Missing config directory")?)
             .map_err(|e| e.to_string())?;
         let mut document = if path.exists() {
-            fs::read_to_string(path)
-                .ok()
-                .and_then(|text| text.parse::<DocumentMut>().ok())
-                .unwrap_or_else(default_document)
+            let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+            de::from_str::<Self>(&text).map_err(|_| {
+                "Config is invalid. Repair it or restore the backup before saving.".to_string()
+            })?;
+            text.parse::<DocumentMut>().map_err(|e| e.to_string())?
         } else {
             default_document()
         };
@@ -325,6 +367,19 @@ impl Config {
         set_value(&mut document["timer_mode"], value(self.timer_mode.clone()));
         set_value(&mut document["theme"], value(self.theme.clone()));
         set_value(&mut document["check_updates"], value(self.check_updates));
+        set_value(
+            &mut document["include_prereleases"],
+            value(self.include_prereleases),
+        );
+        let mut rules = toml_edit::ArrayOfTables::new();
+        for rule in &self.rules {
+            let mut table = toml_edit::Table::new();
+            table["app"] = value(rule.app.clone());
+            table["element"] = value(rule.element.clone());
+            table["activity"] = value(rule.activity.clone());
+            rules.push(table);
+        }
+        document["rules"] = toml_edit::Item::ArrayOfTables(rules);
         set_value(&mut document["show_details"], value(self.show_details));
         set_value(
             &mut document["details_template"],
@@ -378,6 +433,11 @@ impl Config {
             }
             let table = &mut document["apps"][name];
             set_value(&mut table["enabled"], value(app.enabled));
+            if let Some(seconds) = app.idle_after_secs {
+                set_value(&mut table["idle_after_secs"], value(seconds as i64));
+            } else if let Some(table) = table.as_table_mut() {
+                table.remove("idle_after_secs");
+            }
             if let Some(hidden) = app.hide_project_name {
                 set_value(&mut table["hide_project_name"], value(hidden));
             } else if let Some(table) = table.as_table_mut() {
@@ -405,7 +465,11 @@ impl Config {
                 table.remove("control_token_file");
             }
         }
-        fs::write(path, document.to_string()).map_err(|e| e.to_string())?;
+        if path.exists() {
+            let old = fs::read(path).map_err(|e| e.to_string())?;
+            crate::storage::atomic_write(&path.with_extension("toml.bak"), &old)?;
+        }
+        crate::storage::atomic_write(path, document.to_string().as_bytes())?;
         Ok(())
     }
 }
@@ -471,6 +535,47 @@ large_image_key = "designcraft"
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn broken_startup_config_disables_sharing_without_replacing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "broken = [").unwrap();
+        let config = super::Config::load_from(&path);
+        assert!(!config.enabled);
+        assert!(config.hide_project_name);
+        assert!(config.load_error.is_some());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken = [");
+    }
+    #[test]
+    fn backup_preserves_previous_config_and_invalid_config_cannot_be_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = super::Config {
+            hide_project_name: true,
+            ..super::Config::default()
+        };
+        config.rules.push(super::ActivityRule {
+            app: "PhotoCraft".into(),
+            element: "Crop".into(),
+            activity: "Cropping".into(),
+        });
+        config.apps.get_mut("PhotoCraft").unwrap().idle_after_secs = Some(60);
+        config.save_to(&path).unwrap();
+        let first = std::fs::read_to_string(&path).unwrap();
+        config.idle_after_secs = 42;
+        config.save_to(&path).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(path.with_extension("toml.bak")).unwrap(),
+            first
+        );
+        let loaded: super::Config =
+            toml_edit::de::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(loaded.rules, config.rules);
+        assert_eq!(loaded.apps["PhotoCraft"].idle_after_secs, Some(60));
+        std::fs::write(&path, "broken = [").unwrap();
+        assert!(config.save_to(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken = [");
+    }
     #[test]
     fn idle_setting_round_trips_and_old_configs_keep_five_minutes() {
         let original: super::Config = toml_edit::de::from_str("enabled = true").unwrap();

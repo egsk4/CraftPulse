@@ -71,7 +71,7 @@ pub fn save() {
         if let Some(parent) = path().parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let _ = std::fs::write(path(), text);
+        let _ = crate::storage::atomic_write(&path(), text.as_bytes());
     }
 }
 
@@ -85,10 +85,31 @@ pub fn summary(today: i64) -> (BTreeMap<String, u64>, BTreeMap<String, u64>) {
     with(|stats| (stats.totals(today, today), stats.totals(today - 6, today)))
 }
 
+pub fn should_count(
+    enabled: bool,
+    app_enabled: bool,
+    idle: bool,
+    paused: bool,
+    auto_paused: bool,
+) -> bool {
+    enabled && app_enabled && !idle && !paused && !auto_paused
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_counts_enabled_active_unpaused_sharing() {
+        for mask in 0..32 {
+            let enabled = mask & 1 != 0;
+            let app = mask & 2 != 0;
+            let idle = mask & 4 != 0;
+            let paused = mask & 8 != 0;
+            let auto = mask & 16 != 0;
+            assert_eq!(should_count(enabled, app, idle, paused, auto), mask == 3);
+        }
+    }
     #[test]
     fn totals_cover_the_requested_days_only() {
         let mut stats = Stats::default();

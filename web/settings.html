@@ -145,7 +145,9 @@
     html.popup .app .c3,html.popup .app .c4,html.popup .app .c5{grid-column:1/-1}
     html.popup .row{flex-wrap:wrap}
     @media(prefers-reduced-motion:reduce){*{transition:none!important}}
-  </style>
+      .apps .app{grid-template-columns:36px minmax(100px,1fr) minmax(110px,1fr) minmax(100px,1fr) minmax(100px,1fr) minmax(110px,1fr) 40px}
+    @media(max-width:850px){.apps .app{grid-template-columns:36px 1fr 1fr}.apps .app>div{min-width:0}.apps input,.apps select{max-width:100%}}
+</style>
 </head>
 <body>
 <main>
@@ -194,6 +196,7 @@
     <div class="section-head"><div><h2>Presence</h2></div></div>
     <div class="panel">
       <label class="row"><span class="grow"><strong>Share my activity</strong><small>Turn everything on or off</small></span><input class="switch" id="enabled" type="checkbox"></label>
+      <label class="row"><span class="grow"><strong>Include prerelease updates</strong><small>Off checks for official releases only</small></span><input class="switch" id="prereleases" type="checkbox"></label>
       <label class="row"><span class="grow"><strong>Hide project names</strong><small>Show “Private project” instead</small></span><input class="switch" id="hide" type="checkbox"></label>
       <div class="row idle-row"><label for="idle-after" class="grow"><strong>Idle after</strong><small id="idle-help">Seconds without input; 0 turns idle status off</small></label><div class="duration-control"><button type="button" id="idle-less" aria-label="Decrease idle timeout by 30 seconds" title="30 seconds less">−</button><input id="idle-after" type="number" min="0" max="86400" step="1" value="300" aria-describedby="idle-help"><span class="unit" aria-hidden="true">sec</span><button type="button" id="idle-more" aria-label="Increase idle timeout by 30 seconds" title="30 seconds more">+</button></div></div>
       <label class="row"><span class="grow"><strong>Launch at login</strong><small>Start CraftPulse when you sign in</small></span><input class="switch" id="launch" type="checkbox"></label>
@@ -259,8 +262,17 @@
   </section>
 
   <section>
+    <div class="section-head"><div><h2>Activity rules</h2><p>First match wins. Match a selected control name by its prefix.</p></div><button class="btn quiet" id="add-rule">Add rule</button></div>
+    <div class="panel"><div id="rules"></div><div class="inline" style="padding:16px"><button class="btn" id="save-rules">Save rules</button><span id="rules-message" role="status"></span></div></div>
+  </section>
+  <section>
+    <div class="section-head"><div><h2>Resource monitor</h2><p>CraftPulse process only; sampled every 5 seconds. CPU: 100% equals one core.</p></div></div>
+    <div class="panel"><div class="row"><span id="resources" role="status">Collecting first sample…</span></div><div class="note">Native settings-window helpers and ArtCraft/Discord are excluded. Close this window to measure background use.</div></div>
+  </section>
+  <section>
     <div class="section-head"><div><h2>Diagnostics</h2></div><button class="btn quiet" id="refresh">Refresh</button></div>
     <div class="panel">
+      <div class="row"><span class="grow" id="config-error" role="status"></span><button class="btn quiet" id="restore-config">Restore config backup</button><button class="btn quiet" id="support-export">Export support report</button></div>
       <details open><summary>Recent events</summary><pre id="log">Loading…</pre></details>
       <details><summary>System</summary><pre id="diagnostics">Loading…</pre></details>
     </div>
@@ -298,11 +310,13 @@ function drawApps(){
       <div><strong>${n}</strong><small><span class="dot ${kind}"></span>${label}</small></div>
       <div class="c3"><select aria-label="Privacy for ${n}" data-app="${n}" class="app-hide"><option value="inherit" ${app.hide_project_name==null?"selected":""}>Privacy: default</option><option value="hidden" ${app.hide_project_name===true?"selected":""}>Always hide name</option><option value="visible" ${app.hide_project_name===false?"selected":""}>Show name</option></select></div>
       <div class="c4"><input type="text" class="app-action" data-app="${n}" aria-label="Fixed activity for ${n}" maxlength="100" value="${esc(app.action||"")}" placeholder="Automatic"></div>
+      <div><label><small>Idle seconds (blank: global)</small><input type="number" min="0" max="86400" step="1" class="app-idle" data-app="${n}" aria-label="Idle seconds for ${n}" value="${app.idle_after_secs??""}" style="width:100%"></label></div>
       <div class="c5"><select aria-label="Detection for ${n}" data-app="${n}" class="app-live"><option value="live" ${app.live?"selected":""}>Smart + window</option><option value="window" ${!app.live?"selected":""}>Window only</option></select></div>
       <input class="switch app-switch" aria-label="Enable ${n}" data-app="${n}" type="checkbox" ${app.enabled?"checked":""}>
     </div>`;
   }).join("");
   const on=(sel,fn)=>document.querySelectorAll(sel).forEach(n=>n.addEventListener("change",fn));
+  on(".app-idle",e=>{const value=e.target.value;const seconds=Number(value);if(value!==""&&(!Number.isInteger(seconds)||seconds<0||seconds>86400)){e.target.setCustomValidity("Use 0–86400 seconds or leave blank");e.target.reportValidity();return}e.target.setCustomValidity("");config.apps[e.target.dataset.app].idle_after_secs=value===""?null:seconds;save()});
   on(".app-switch",e=>{config.apps[e.target.dataset.app].enabled=e.target.checked;save()});
   on(".app-hide",e=>{config.apps[e.target.dataset.app].hide_project_name=e.target.value==="inherit"?null:e.target.value==="hidden";save()});
   on(".app-action",e=>{config.apps[e.target.dataset.app].action=e.target.value.trim()||null;save()});
@@ -334,10 +348,25 @@ function fmt(sec){sec=Math.max(0,sec|0);const h=Math.floor(sec/3600),m=Math.floo
 function tick(){document.querySelectorAll("[data-start]").forEach(n=>n.textContent=fmt(Date.now()/1000-Number(n.dataset.start)))}
 setInterval(tick,1000);
 
+function drawRules(){
+  $("rules").replaceChildren();
+  (config.rules||[]).forEach((rule,index)=>{
+    const row=document.createElement("div");row.className="row";row.style.flexWrap="wrap";
+    const app=document.createElement("select");app.setAttribute("aria-label","App for rule "+(index+1));
+    Object.keys(config.apps).forEach(name=>{const option=document.createElement("option");option.value=name;option.textContent=name;app.appendChild(option)});app.value=rule.app;app.onchange=()=>rule.app=app.value;row.appendChild(app);
+    [["element","Selected control prefix"],["activity","Activity text"]].forEach(([key,label])=>{const input=document.createElement("input");input.type="text";input.maxLength=100;input.value=rule[key];input.placeholder=label;input.setAttribute("aria-label",label+" for rule "+(index+1));input.oninput=()=>rule[key]=input.value;row.appendChild(input)});
+    const remove=document.createElement("button");remove.className="btn quiet";remove.textContent="Remove";remove.onclick=()=>{config.rules.splice(index,1);drawRules()};row.appendChild(remove);$("rules").appendChild(row);
+  });
+}
+$("add-rule").onclick=()=>{config.rules=config.rules||[];if(config.rules.length>=100)return;config.rules.push({app:"PhotoCraft",element:"",activity:""});drawRules()};
+$("save-rules").onclick=async()=>{try{await call("/api/settings",{method:"PUT",body:JSON.stringify({rules:config.rules||[]})});$("rules-message").textContent="Saved"}catch(error){$("rules-message").textContent=error.message}};
+$("restore-config").onclick=async()=>{if(!confirm("Restore config.toml.bak? Current file will be preserved, and sharing will be off until you enable it."))return;try{await call("/api/config/restore",{method:"POST"});await load()}catch(error){$("config-error").textContent=error.message}};
+$("support-export").onclick=async()=>{try{const report=await call("/api/support");const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="craftpulse-support.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(error){$("config-error").textContent=error.message}};
 async function load(){
   config=await call("/api/settings");
   $("enabled").checked=config.enabled;$("hide").checked=config.hide_project_name;$("launch").checked=config.launch_at_login;$("details").checked=config.show_details!==false;$("updates").checked=config.check_updates!==false;
   $("idle-after").value=config.idle_after_secs??300;
+  $("prereleases").checked=!!config.include_prereleases;drawRules();
   $("action").value=config.action;$("patterns").value=(config.hide_patterns||[]).join("\n");
   $("quiet").checked=!!config.quiet_hours;$("quiet-start").value=config.quiet_start||"22:00";$("quiet-end").value=config.quiet_end||"07:00";$("stream-pause").checked=!!config.pause_while_streaming;$("milestones").checked=!!config.milestones;
   $("details-template").value=config.details_template||"";$("state-template").value=config.state_template||"";
@@ -349,13 +378,13 @@ async function load(){
 async function save(){
   const idle=Number($("idle-after").value);
   if(!Number.isInteger(idle)||idle<0||idle>86400){$("message").textContent="Idle timeout must be between 0 and 86400 seconds";return}
-  config.idle_after_secs=idle;
+  config.idle_after_secs=idle;config.include_prereleases=$("prereleases").checked;
   config.enabled=$("enabled").checked;config.hide_project_name=$("hide").checked;config.launch_at_login=$("launch").checked;config.show_details=$("details").checked;config.check_updates=$("updates").checked;
   config.quiet_hours=$("quiet").checked;config.quiet_start=$("quiet-start").value||"22:00";config.quiet_end=$("quiet-end").value||"07:00";config.pause_while_streaming=$("stream-pause").checked;config.milestones=$("milestones").checked;
   config.details_template=$("details-template").value;config.state_template=$("state-template").value;
   config.buttons=[1,2].map(i=>({label:$("b"+i+"-label").value.trim(),url:$("b"+i+"-url").value.trim()})).filter(b=>b.label||b.url);
   config.action=$("action").value;config.hide_patterns=$("patterns").value.split("\n").map(x=>x.trim()).filter(Boolean);
-  try{await call("/api/settings",{method:"PUT",body:JSON.stringify(config)});$("message").textContent="Saved";$("card-message").textContent="Saved";setTimeout(()=>{$("message").textContent="";$("card-message").textContent=""},1800);drawApps()}
+  try{const {rules,...settings}=config;await call("/api/settings",{method:"PUT",body:JSON.stringify(settings)});$("message").textContent="Saved";$("card-message").textContent="Saved";setTimeout(()=>{$("message").textContent="";$("card-message").textContent=""},1800);drawApps()}
   catch(err){$("message").textContent=err.message;$("card-message").textContent=err.message;setStatus("Could not save","bad")}
 }
 async function refresh(){
@@ -363,6 +392,9 @@ async function refresh(){
     const diag=await call("/api/diagnostics");
     $("idle-help").textContent=diag.platform==="windows"?"Seconds without input; 0 turns off. Once idle, return to ArtCraft to resume.":"Seconds without input; 0 turns idle status off";
     $("diagnostics").textContent=JSON.stringify(diag,null,2);drawPreview(diag.last_presence);
+    $("config-error").textContent=diag.config_error||"Settings are loaded. Backup restoration leaves sharing off.";
+    const resource=diag.resources;
+    $("resources").textContent=resource&&resource.sampled?`${resource.cpu_percent.toFixed(1)}% CPU · ${(resource.memory_bytes/1048576).toFixed(1)} MiB RAM · ${Math.floor(resource.uptime_seconds/60)}m uptime`:"Collecting first sample…";
     $("log").textContent=(await call("/api/log")).slice(-30).join("\n")||"No events yet.";
     const lv=await call("/api/live");live={};lv.apps.forEach(s=>live[s.name]=s);
     $("restart-note").classList.toggle("hidden",!lv.restart_needed.length);
@@ -374,7 +406,7 @@ async function refresh(){
     const up=await call("/api/update");
     $("update-note").classList.toggle("hidden",!up.available);
     if(up.available)$("update-title").textContent="Update available: "+up.available.version.replace(/^CraftPulse-/,"");
-    setStatus("Running","ok");
+    setStatus(diag.config_error?"Config needs attention":"Running",diag.config_error?"bad":"ok");
   }catch(err){setStatus("Local connection error","bad");$("diagnostics").textContent=err.message}
 }
 async function enableLive(){
@@ -434,7 +466,7 @@ function adjustIdle(delta){
 $("idle-less").onclick=()=>adjustIdle(-30);
 $("idle-more").onclick=()=>adjustIdle(30);
 $("save").onclick=save;$("refresh").onclick=refresh;
-["idle-after","enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
+["prereleases","idle-after","enabled","hide","launch","details","updates","quiet","quiet-start","quiet-end","stream-pause","milestones"].forEach(id=>$(id).addEventListener("change",save));
 $("test").onclick=async()=>{const r=await call("/api/test-action",{method:"POST",body:JSON.stringify({action:$("test-action").value})});drawPreview(r)};
 load().catch(e=>{setStatus("Local connection error","bad");$("diagnostics").textContent=e.message});
 setInterval(()=>{if(!document.hidden)refresh()},4000);

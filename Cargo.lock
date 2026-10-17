@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "craftpulse"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -442,6 +442,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tao",
+ "tempfile",
  "tiny_http",
  "toml_edit 0.22.27",
  "tray-icon",

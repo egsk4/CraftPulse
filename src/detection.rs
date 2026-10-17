@@ -52,6 +52,7 @@ pub struct ProcessDetector {
     /// True when there has been no keyboard or mouse input for a while.
     pub idle: bool,
     pub idle_after_secs: u64,
+    pub idle_overrides: std::collections::BTreeMap<String, u64>,
     /// A streaming or recording app (OBS and similar) is running.
     pub streaming: bool,
     /// Raw visible window titles of the chosen app (for the activity log).
@@ -167,6 +168,11 @@ impl ProcessDetector {
         unknown.dedup();
         self.unknown = unknown;
         self.previous = current;
+        let threshold = chosen
+            .as_ref()
+            .and_then(|(_, name, _, _)| self.idle_overrides.get(&name.to_ascii_lowercase()))
+            .copied()
+            .unwrap_or(self.idle_after_secs);
         let idle_for = idle_seconds();
         LAST_IDLE_SECONDS.store(
             idle_for.unwrap_or(u64::MAX),
@@ -176,7 +182,7 @@ impl ProcessDetector {
         {
             self.idle = windows_idle_status(
                 idle_for,
-                self.idle_after_secs,
+                threshold,
                 self.idle,
                 self.current_pid,
                 chosen.as_ref().map(|(_, _, pid, _)| *pid),
@@ -185,7 +191,7 @@ impl ProcessDetector {
         }
         #[cfg(not(windows))]
         {
-            self.idle = is_idle(idle_for, self.idle_after_secs);
+            self.idle = is_idle(idle_for, threshold);
         }
 
         match chosen {
@@ -795,7 +801,12 @@ fn refresh_processes(system: &mut System) {
 
 #[cfg(not(target_os = "linux"))]
 fn refresh_processes(system: &mut System) {
-    system.refresh_processes(ProcessesToUpdate::All, true);
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
 }
 
 #[cfg(target_os = "windows")]

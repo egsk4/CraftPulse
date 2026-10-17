@@ -158,9 +158,46 @@ def main():
                 call("/api/settings", {"idle_after_secs": 0})
                 wait_for(lambda: any(card and card.get("state") == "in PhotoCraft — Editing an image"
                     and card.get("buttons", [{}])[0].get("label") == "Portfolio" for card in cards), 20)
+                # Stable-release regressions: new settings, safe reporting, duplicate
+                # instance protection, failed-save rollback and explicit recovery.
+                rules = [{"app": "PhotoCraft", "element": "Crop", "activity": "Cropping"}]
+                settings = call("/api/settings")
+                settings["apps"]["PhotoCraft"]["idle_after_secs"] = 0
+                call("/api/settings", {"rules": rules, "apps": settings["apps"], "include_prereleases": True})
+                settings = call("/api/settings")
+                assert settings["rules"] == rules and settings["include_prereleases"]
+                assert settings["apps"]["PhotoCraft"]["idle_after_secs"] == 0
+                try:
+                    call("/api/settings", {"rules": [{"app": "PhotoCraft", "element": "", "activity": "Bad"}]})
+                    raise AssertionError("Empty rule accepted")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 400
+                call("/api/settings", {"enabled": False})
+                wait_for(lambda: call("/api/diagnostics")["last_presence"] is None)
+                before = call("/api/stats")
+                time.sleep(2)
+                assert call("/api/stats") == before, "Disabled sharing must not add usage"
+                wait_for(lambda: call("/api/monitor")["sampled"])
+                report = call("/api/support")
+                assert report["resources"]["memory_bytes"] > 0
+                assert not any(key in report for key in ("config_path", "last_presence", "token", "rules", "logs"))
+                duplicate = subprocess.run([str(binary)], env=env, timeout=5, capture_output=True)
+                assert duplicate.returncode == 0, duplicate.stderr
+                config.write_text("invalid = [")
+                try:
+                    call("/api/settings", {"enabled": True})
+                    raise AssertionError("Invalid file overwritten")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 500
+                assert config.read_text() == "invalid = ["
+                assert call("/api/settings")["enabled"] is False, "Failed save changed running settings"
+                call("/api/config/restore", {})
+                assert call("/api/settings")["enabled"] is False
+                assert list(config.parent.glob("config-recovered-*.toml")), "Original damaged config was not preserved"
+                assert "invalid = [" not in config.read_text()
                 assert process.poll() is None
                 assert not server_errors, server_errors
-                print("PASS:", "running real PhotoCraft" if fake_app is None else "simulated AppImage payload", "settings authentication,", "idle presence," if env.get("WAYLAND_DISPLAY") else "idle configuration,", "button IPC, persistence and partial session-setup failure")
+                print("PASS:", "running real PhotoCraft" if fake_app is None else "simulated AppImage payload", "settings authentication,", "idle presence," if env.get("WAYLAND_DISPLAY") else "idle configuration,", "button IPC, rules, per-app idle, update channels, monitor, support export, single instance, save rollback, backup recovery and partial session-setup failure")
             except Exception:
                 print("Observed cards (mock Discord peer):", cards)
                 print("Mock server errors:", server_errors)

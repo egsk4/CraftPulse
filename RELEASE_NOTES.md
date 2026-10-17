@@ -1,24 +1,30 @@
-CraftPulse v0.4.2 alpha fixes Windows idle status and improves the idle-time setting.
+CraftPulse v0.5.0 — first official release
 
-### Fixed
+Reliability
+- Atomic config and stats writes; previous valid config backup and explicit recovery.
+- Invalid startup config disables sharing and shows a warning instead of silently using sharing-enabled defaults.
+- Failed settings saves leave running settings unchanged.
+- Usage stats exclude disabled sharing/apps, idle time and all pause modes.
+- Stopping sharing clears the preview; test cards respect global disable and pauses.
+- OS-held single-instance protection prevents duplicate tray apps.
 
-- **Windows idle status:** clicking around Discord or another app no longer makes an already-idle ArtCraft app appear active. Idle clears when you return to that ArtCraft app. Selecting a different app, closing it or disabling idle also clears the latch.
-- **Idle-time control:** replaced the plain number box with a themed, keyboard-accessible seconds field and labelled −/+ buttons. Buttons adjust by 30 seconds, clamp values to 0–86400, and debounce saving during repeated clicks. Zero disables idle.
-- Run the X11 fixture through the installed shell, avoiding temporary executable-file races during parallel CI. The test retains an open writer to cover this condition.
+Settings
+- Activity rule editor with validated ordered rules.
+- Per-app idle timeout, including inherit and disabled options.
+- Stable updates by default; optional prerelease channel.
+- CPU/RAM/uptime monitor, sampled every five seconds for CraftPulse only.
+- Sanitized support-report export excluding names, paths, tokens and logs.
 
-### Downloads
+Performance
+- Minimal process refresh fields on Windows/macOS.
+- Cached privacy regexes; stripped, LTO-optimized release builds.
+- Resource monitor refreshes only this PID, not the process tree.
 
-| Platform | Asset |
-| --- | --- |
-| Windows x86-64 | `craftpulse-v0.4.2-windows-x86_64.zip` |
-| Linux x86-64 | `craftpulse-v0.4.2-linux-x86_64.tar.gz` |
-| Arch Linux x86-64 | `craftpulse-v0.4.2-archlinux-x86_64.tar.gz` |
-| macOS Apple Silicon | `craftpulse-v0.4.2-macos-arm64.tar.gz` |
+Downloads
+- Windows x86-64: craftpulse-v0.5.0-windows-x86_64.zip
+- Linux x86-64: craftpulse-v0.5.0-linux-x86_64.tar.gz
+- Arch Linux x86-64: craftpulse-v0.5.0-archlinux-x86_64.tar.gz
+- macOS Apple Silicon: craftpulse-v0.5.0-macos-arm64.tar.gz
+- SHA256SUMS.txt
 
-Quit CraftPulse from its tray menu, extract the new archive and replace your executable. Your configuration is retained. Checksums are in `SHA256SUMS.txt`.
-
-### Validation
-
-The release workflow requires passing tests, strict Clippy and optimized builds on Windows, Linux and macOS, plus Arch Wayland idle, native settings rendering and end-to-end AppImage/Discord smoke checks. Regression tests simulate the Windows idle/focus transitions; they do not replace an interactive test with real Discord on a Windows desktop.
-
-Linux keeps its existing system-idle behavior. Desktop-specific detection limits and installation dependencies are documented in the [README](https://github.com/egsk4/CraftPulse/blob/CraftPulse-v0.4.2/README.md).
+Platform capabilities differ. Linux GNOME Wayland uses process/live-API detection for native apps; window enumeration is unavailable there. Native GUI libraries are required on Linux. Windows/macOS CI is automated coverage, not interactive testing with real Discord. See README.md and LINUX-TESTING.md for installation, checks and limitations.

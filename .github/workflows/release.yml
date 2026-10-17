@@ -24,7 +24,7 @@ jobs:
           path: release-input
       - name: Package executables and checksums
         run: python3 scripts/package_release.py
-      - name: Publish alpha release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -32,6 +32,9 @@ jobs:
             echo "Release already exists; keeping its downloads and notes unchanged."
             exit 0
           fi
+          args=()
+          version="${GITHUB_REF_NAME#CraftPulse-v}"
+          if [[ "$version" == *-* ]]; then args+=(--prerelease); fi
           gh release create "$GITHUB_REF_NAME" release-output/* --verify-tag \
-            --title "CraftPulse ${GITHUB_REF_NAME#CraftPulse-} (alpha)" \
-            --prerelease --notes-file RELEASE_NOTES.md
+            --title "CraftPulse ${GITHUB_REF_NAME#CraftPulse-}" \
+            "${args[@]}" --notes-file RELEASE_NOTES.md

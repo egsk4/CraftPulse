@@ -11,8 +11,7 @@ in PhotoCraft — Editing
 
 Everything happens locally on your machine. The only thing sent anywhere is the presence card to your own Discord client.
 
-> [!WARNING]
-> **CraftPulse is in very early development and has a lot of bugs right now.** Detection can be wrong, miss things, or lag behind what you're doing. We're focusing on **PhotoCraft** and **LightCraft** first, and will get to the rest of the Craft apps after that. If you hit a bug, please [open an issue](https://github.com/egsk4/CraftPulse/issues), or send a [pull request](https://github.com/egsk4/CraftPulse/pulls) if you've fixed it yourself.
+> **v0.5.0 is the first stable release.** PhotoCraft and LightCraft have the most detailed detection. Other apps and desktop environments have different capabilities; see the platform table and Linux requirements below. Please [report problems](https://github.com/egsk4/CraftPulse/issues) with your platform and a sanitized support report.
 
 ## Supported apps
 
@@ -42,16 +41,16 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 
 ## Install
 
-### Prebuilt (v0.4.2 alpha)
+### Prebuilt (v0.5.0)
 
-Download from [CraftPulse v0.4.2](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.2):
+Download from [CraftPulse v0.5.0](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.5.0):
 
 | System | Download |
 | --- | --- |
-| Windows x86-64 | `craftpulse-v0.4.2-windows-x86_64.zip` |
-| Arch Linux x86-64 | `craftpulse-v0.4.2-archlinux-x86_64.tar.gz` |
-| Other Linux x86-64 | `craftpulse-v0.4.2-linux-x86_64.tar.gz` |
-| macOS Apple Silicon | `craftpulse-v0.4.2-macos-arm64.tar.gz` |
+| Windows x86-64 | `craftpulse-v0.5.0-windows-x86_64.zip` |
+| Arch Linux x86-64 | `craftpulse-v0.5.0-archlinux-x86_64.tar.gz` |
+| Other Linux x86-64 | `craftpulse-v0.5.0-linux-x86_64.tar.gz` |
+| macOS Apple Silicon | `craftpulse-v0.5.0-macos-arm64.tar.gz` |
 
 1. Extract the archive. `SHA256SUMS.txt` contains the published checksums.
 2. Run `craftpulse.exe` on Windows or `./craftpulse` on Linux/macOS.
@@ -128,7 +127,7 @@ The activity is chosen in this order, first match wins:
 5. A matching live-control rule, live activity, or detected window/button activity
 6. The **default activity**
 
-To respect Discord's limits, updates are rate limited to 4 per 20 seconds, a changed card is sent at most every 5 seconds, and the presence is refreshed every 30 seconds. If Discord isn't running, CraftPulse retries every 30 seconds for up to 5 minutes after a Craft app appears.
+To respect Discord's limits, updates are rate limited to 4 per 20 seconds, a changed card is sent at most every 5 seconds, and unchanged presence is refreshed every 10 seconds. If Discord isn't running, CraftPulse retries every 3 seconds without a five-minute cutoff. A stalled RPC request times out after 4 seconds.
 
 ## Configuration
 
@@ -140,7 +139,9 @@ Settings are stored in `config.toml`:
 | macOS | `~/Library/Application Support/CraftPulse/config.toml` |
 | Linux | `~/.config/CraftPulse/config.toml` |
 
-The file is created on first run. Saving from the settings page keeps your comments and formatting.
+The file is created on first run. Saving retains existing TOML comments and formatting where possible; the rule editor rewrites the rules section. Saves replace files atomically and keep the previous valid config as `config.toml.bak`.
+
+If the config cannot be loaded at startup, sharing starts **off** and settings show a warning. Repair the file or use **Restore config backup** in Diagnostics. Recovery preserves the current file as `config-recovered-*.toml` and leaves sharing off until you enable it. An invalid config cannot be overwritten by an ordinary settings save.
 
 ```toml
 enabled = true
@@ -161,11 +162,11 @@ element = "Info (I)"
 activity = "Viewing photo info"
 ```
 
-### Button and tab rules (Windows)
+### Activity rules
 
-A rule shows `activity` while a button or tab in `app` is selected and its name **starts with** `element` (case-insensitive).
+A rule shows `activity` while a selected button or tab in `app` has a name that **starts with** `element` (case-insensitive). Windows uses UI Automation; Linux can match active controls exposed by the app's live API. Unsupported controls do not match.
 
-- Rules are added by editing `config.toml`; the settings page doesn't manage them.
+- Add, edit and remove rules in the settings page's **Activity rules** panel, then click **Save rules**. Editing `config.toml` also works. Earlier rows have priority.
 - Your rules are checked before the built-in ones, and earlier rules win.
 - Only button-like controls (buttons, checkboxes, radio buttons, list items and tabs) that are currently selected or toggled on are matched.
 - To find the exact button names an app exposes, use a UI Automation inspector such as [Accessibility Insights for Windows](https://accessibilityinsights.io/).
@@ -215,7 +216,7 @@ Both fields are optional and limited to 100 characters. A hint is only used whil
 
 ## Troubleshooting
 
-- **Nothing shows on Discord**: the Discord desktop app must be running, **Enable Rich Presence** must be on, and the app must be enabled in per-app overrides. Check the activity log for `Discord is unavailable; will retry in 30 seconds`.
+- **Nothing shows on Discord**: the Discord desktop app must be running, **Enable Rich Presence** must be on, and the app must be enabled in per-app overrides. Check the activity log for `Discord is unavailable; retrying every few seconds`.
 - **Card shows "Working"**: no project name was found. Opening or saving a document usually fixes it.
 - **Wrong or missing activity**: add a rule in `config.toml`, or clear the per-app activity text, which overrides detection.
 - **A Craft app isn't detected**: the log lists unrecognised processes with "craft" in their name. Only the seven apps above are matched.
@@ -224,6 +225,9 @@ Both fields are optional and limited to 100 characters. A hint is only used whil
 
 ```
 src/
+  storage.rs      Atomic local writes
+  instance.rs     OS-held single-instance lock
+  monitor.rs      CPU/RAM sampling for CraftPulse only
   main.rs         Main loop, presence timing and retry logic
   detection.rs    Process, window title, dialog and UI Automation detection
   config.rs       config.toml loading, saving and live reload
@@ -264,13 +268,13 @@ The settings page has an **Elapsed timer** switch (Off, Session, Document) and a
 
 ## Updates and extra details
 
-CraftPulse checks GitHub for a newer release (switch it off under **Check for updates**) and tells you when one exists. It never installs anything by itself. **Show extra details** adds things like "Page 3 of 12" (PdfCraft), image size (PhotoCraft) and size plus star rating (LightCraft) to the document line.
+CraftPulse checks GitHub for a newer official release every six hours (switch it off under **Check for updates**) and tells you when one exists. Turn on **Include prerelease updates** to also see preview versions. A channel change is picked up within 30 seconds. It never installs anything by itself. **Show extra details** adds things like "Page 3 of 12" (PdfCraft), image size (PhotoCraft) and size plus star rating (LightCraft) to the document line.
 
 ## Card text, buttons, pause and stats
 
 - **Card:** change the two text lines with placeholders `{app}`, `{activity}`, `{document}` and `{detail}`, and add up to two link buttons (https links only).
 - **Pause sharing:** from the tray menu or the settings page (1 hour, or until you resume).
-- **Time in apps:** shows how long you were active in each Craft app today and over 7 days. It is stored only in `stats.json` next to `config.toml`; use **Clear** to erase it.
+- **Time in apps:** shows how long you were active in each Craft app today and over 7 days, using UTC day boundaries. Disabled apps, idle time, manual pauses, quiet hours and streaming pauses are excluded. It is stored only in `stats.json` next to `config.toml`; use **Clear** to erase it.
 
 ## More controls
 
@@ -317,3 +321,13 @@ Install the optional helpers for your desktop. Linux opens a native WebKitGTK se
 
 See [Linux test commands and verification evidence](LINUX-TESTING.md) for the
 Arch CI checks and real-AppImage testing limits.
+
+## Reliability and resource use
+
+- **Single instance:** a second launch exits without creating another tray icon or Discord connection. The OS releases the lock on exit, including crashes.
+- **Per-app idle timeout:** each app has an idle seconds field. Blank inherits the global setting; zero disables idle for that app.
+- **Resource monitor:** settings show CraftPulse process CPU, resident memory and uptime. Sampling runs every five seconds and refreshes only CraftPulse's process. CPU 100% means one logical core; it may exceed 100% when multiple cores are used. WebView helper processes, ArtCraft and Discord are excluded.
+- **Support export:** Diagnostics → **Export support report** downloads a JSON report with version, platform, session type, sharing state and resource sample. It excludes project names, filesystem paths, tokens, rules, buttons and event logs. Nothing is uploaded automatically.
+- **Presence preview:** cleared when sharing stops or an RPC send fails. A successful send means Discord accepted the IPC write; client display rules can still affect what you see.
+
+The release uses LTO, stripped symbols and one codegen unit. Detection polls twice a second while sharing an app and backs off to every two seconds when no app is detected or sharing is disabled; privacy regexes are compiled only when patterns change. Native GUI runtime libraries and WebView helpers also consume resources. Resource use varies by desktop, app count and API availability; see [verification evidence](LINUX-TESTING.md).

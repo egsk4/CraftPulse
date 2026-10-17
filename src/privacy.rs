@@ -19,6 +19,31 @@ pub fn render_template(template: &str, values: &[(&str, &str)]) -> String {
     .to_string()
 }
 
+thread_local! {
+    static HIDE_CACHE: std::cell::RefCell<(Vec<String>, Vec<regex::Regex>)> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+fn matches_hidden(document: Option<&str>, patterns: &[String]) -> bool {
+    let Some(document) = document else {
+        return false;
+    };
+    HIDE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.0 != patterns {
+            let compiled = patterns
+                .iter()
+                .filter_map(|pattern| {
+                    RegexBuilder::new(pattern)
+                        .case_insensitive(true)
+                        .build()
+                        .ok()
+                })
+                .collect();
+            *cache = (patterns.to_vec(), compiled);
+        }
+        cache.1.iter().any(|pattern| pattern.is_match(document))
+    })
+}
+
 pub fn make_card(
     app: &DetectedApp,
     document: Option<&str>,
@@ -29,13 +54,7 @@ pub fn make_card(
     let hidden = app_config
         .hide_project_name
         .unwrap_or(config.hide_project_name)
-        || config.hide_patterns.iter().any(|pattern| {
-            RegexBuilder::new(pattern)
-                .case_insensitive(true)
-                .build()
-                .map(|regex| document.map(|name| regex.is_match(name)).unwrap_or(false))
-                .unwrap_or(false)
-        });
+        || matches_hidden(document, &config.hide_patterns);
     let document = if hidden {
         "Private project".to_string()
     } else {

@@ -43,13 +43,14 @@ pub fn parse_version(tag: &str) -> Option<(u32, u32, u32)> {
 }
 
 /// The newest non-draft release in a GitHub `releases` reply, if it is newer than `current`.
-pub fn newer_release(body: &str, current: &str) -> Option<UpdateInfo> {
+pub fn newer_release(body: &str, current: &str, include_prereleases: bool) -> Option<UpdateInfo> {
     let releases: serde_json::Value = serde_json::from_str(body).ok()?;
     let current = parse_version(current)?;
     releases
         .as_array()?
         .iter()
         .filter(|release| release["draft"].as_bool() != Some(true))
+        .filter(|release| include_prereleases || release["prerelease"].as_bool() != Some(true))
         .filter_map(|release| {
             let tag = release["tag_name"].as_str()?;
             let url = release["html_url"].as_str()?;
@@ -78,17 +79,23 @@ pub fn start(config: SharedConfig) {
         .name("craftpulse-update".to_string())
         .spawn(move || {
             let mut last: Option<Instant> = None;
+            let mut selection = None;
             loop {
-                let enabled = config
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .check_updates;
+                let (enabled, include_prereleases) = {
+                    let cfg = config.lock().unwrap_or_else(|e| e.into_inner());
+                    (cfg.check_updates, cfg.include_prereleases)
+                };
+                if selection != Some((enabled, include_prereleases)) {
+                    selection = Some((enabled, include_prereleases));
+                    last = None;
+                    *AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                }
                 let due = last.is_none_or(|at| at.elapsed() >= CHECK_EVERY);
                 if enabled && due {
                     last = Some(Instant::now());
-                    if let Some(found) =
-                        fetch().and_then(|body| newer_release(&body, current_version()))
-                    {
+                    if let Some(found) = fetch().and_then(|body| {
+                        newer_release(&body, current_version(), include_prereleases)
+                    }) {
                         let first_time = available().as_ref() != Some(&found);
                         *AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()) = Some(found.clone());
                         if first_time {
@@ -112,6 +119,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stable_channel_excludes_prereleases() {
+        let body = r#"[{"tag_name":"v0.5.0","html_url":"https://github.com/egsk4/CraftPulse/releases/tag/v0.5.0","prerelease":false},{"tag_name":"v0.6.0-beta","html_url":"https://github.com/egsk4/CraftPulse/releases/tag/v0.6.0-beta","prerelease":true}]"#;
+        assert_eq!(
+            newer_release(body, "0.4.2", false).unwrap().version,
+            "v0.5.0"
+        );
+        assert_eq!(
+            newer_release(body, "0.4.2", true).unwrap().version,
+            "v0.6.0-beta"
+        );
+    }
+    #[test]
     fn parses_release_tags() {
         assert_eq!(parse_version("CraftPulse-v0.3.1-alpha"), Some((0, 3, 1)));
         assert_eq!(parse_version("v1.2"), Some((1, 2, 0)));
@@ -125,15 +144,15 @@ mod tests {
           {"tag_name":"CraftPulse-v0.4.0","html_url":"https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.4.0","draft":false},
           {"tag_name":"CraftPulse-v0.9.0","html_url":"https://github.com/egsk4/CraftPulse/releases/tag/x","draft":true}
         ]"#;
-        let found = newer_release(body, "0.3.0").unwrap();
+        let found = newer_release(body, "0.3.0", false).unwrap();
         assert_eq!(found.version, "CraftPulse-v0.4.0");
-        assert_eq!(newer_release(body, "0.4.0"), None);
-        assert_eq!(newer_release("not json", "0.3.0"), None);
+        assert_eq!(newer_release(body, "0.4.0", false), None);
+        assert_eq!(newer_release("not json", "0.3.0", false), None);
     }
 
     #[test]
     fn ignores_links_that_are_not_github() {
         let body = r#"[{"tag_name":"v9.0.0","html_url":"https://evil.example/x","draft":false}]"#;
-        assert_eq!(newer_release(body, "0.3.0"), None);
+        assert_eq!(newer_release(body, "0.3.0", false), None);
     }
 }
