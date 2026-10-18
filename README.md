@@ -15,7 +15,7 @@ Detection, settings and usage history stay on your machine. CraftPulse sends the
 
 ## Supported apps
 
-The seven apps below are recognised, but **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
+The local unreleased build recognises thirteen apps; published v0.5.0 recognises the original seven. **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
 
 | App | What it is | Built-in activity |
 | --- | --- | --- |
@@ -26,10 +26,16 @@ The seven apps below are recognised, but **PhotoCraft and LightCraft are the cur
 | [PdfCraft](https://getartcraft.com/apps/pdfcraft) | PDF workbench | Working on a PDF |
 | [EffectCraft](https://getartcraft.com/apps/effectcraft) | Motion graphics and VFX | Making motion graphics |
 | [DesignCraft](https://getartcraft.com/apps/designcraft) | Page layout and publishing | Designing a layout |
+| FigCraft (unreleased) | Interface design | Designing an interface |
+| WordCraft (unreleased) | Word processing | Writing a document |
+| SoundCraft (unreleased) | Audio editing | Editing audio |
+| DeckCraft (unreleased) | Presentations | Editing a presentation |
+| CADCraft (unreleased) | CAD | Drafting |
+| GridCraft (unreleased) | Spreadsheets | Editing a spreadsheet |
 
 ## Features
 
-- **Automatic detection** of the Craft app you're using. If several are open, the one with focus wins.
+- **Automatic detection** of the Craft app you're using. If several are open, the one with focus wins. The unreleased **App to share** selector can pin one app; sharing clears when that app closes or is disabled.
 - **Project name on your card**, read from the window title and, on Windows, from the app's open document tabs.
 - **Activity detection**: dialogs like Export, Render, Save, Print, Import and Open are recognised, and you can map selected buttons or tabs to your own activity text.
 - **Idle status** after a configurable period without keyboard or mouse input (5 minutes by default; 0 disables it).
@@ -219,7 +225,7 @@ Both fields are optional and limited to 100 characters. A hint is only used whil
 - **Nothing shows on Discord**: the Discord desktop app must be running, **Enable Rich Presence** must be on, and the app must be enabled in per-app overrides. Check the activity log for `Discord is unavailable; retrying every few seconds`.
 - **Card shows "Working"**: no project name was found. Opening or saving a document usually fixes it.
 - **Wrong or missing activity**: add a rule in `config.toml`, or clear the per-app activity text, which overrides detection.
-- **A Craft app isn't detected**: the log lists unrecognised processes with "craft" in their name. Only the seven apps above are matched.
+- **A Craft app isn't detected**: the log lists unrecognised processes with "craft" in their name. Only the apps in the supported-apps table are matched; the six additions require the unreleased build.
 
 ## Development
 
@@ -272,6 +278,8 @@ CraftPulse checks GitHub for a newer official release every six hours (switch it
 
 ## Card text, buttons, pause and stats
 
+- **Card styles:** choose Classic, Studio or Playful to fill the card text fields, then click Save to apply. Your privacy settings still apply.
+- **Creative spark:** get a small creative challenge in settings, with no consecutive repeats. Prompts stay local, do not change your status and are not saved.
 - **Card:** change the two text lines with placeholders `{app}`, `{activity}`, `{document}` and `{detail}`, and add up to two link buttons (https links only).
 - **Pause sharing:** from the tray menu or the settings page (1 hour, or until you resume).
 - **Time in apps:** shows how long you were active in each Craft app today and over 7 days, using UTC day boundaries. Disabled apps, idle time, manual pauses, quiet hours and streaming pauses are excluded. It is stored only in `stats.json` next to `config.toml`; use **Clear** to erase it.
@@ -325,9 +333,45 @@ Arch CI checks and real-AppImage testing limits.
 ## Reliability and resource use
 
 - **Single instance:** a second launch exits without creating another tray icon or Discord connection. The OS releases the lock on exit, including crashes.
-- **Per-app idle timeout:** each app has an idle seconds field. Blank inherits the global setting; zero disables idle for that app.
+- **Per-app idle timeout:** choose **Use global**, **Never show Idle**, or **Custom timeout** in an app’s Idle status menu. Custom timeouts use a themed seconds field; the underlying config format is unchanged.
 - **Resource monitor:** settings show CraftPulse process CPU, resident memory and uptime. Sampling runs every five seconds and refreshes only CraftPulse's process. CPU 100% means one logical core; it may exceed 100% when multiple cores are used. WebView helper processes, ArtCraft and Discord are excluded.
 - **Support export:** Diagnostics → **Export support report** downloads a JSON report with version, platform, session type, sharing state and resource sample. It excludes project names, filesystem paths, tokens, rules, buttons and event logs. Nothing is uploaded automatically.
 - **Presence preview:** cleared when sharing stops or an RPC send fails. A successful send means Discord accepted the IPC write; client display rules can still affect what you see.
 
 The release uses LTO, stripped symbols and one codegen unit. Detection polls twice a second while sharing an app and backs off to every two seconds when no app is detected or sharing is disabled; privacy regexes are compiled only when patterns change. Native GUI runtime libraries and WebView helpers also consume resources. Resource use varies by desktop, app count and API availability; see [verification evidence](LINUX-TESTING.md).
+
+## Local unreleased app support
+
+[Issue #2](https://github.com/egsk4/CraftPulse/issues/2) reports six missing apps on
+Omarchy (Arch Linux/Hyprland). The local changes register these apps, give them
+specific default activities and add them to older configs without replacing
+existing app preferences. Their default icons are HTTPS images published in the
+apps' GitHub repositories, fetched by Discord; configured custom assets are kept.
+
+The six additions use process/window detection by default. No control ports or
+detailed live-API support are assumed. A manually configured control port can be
+used to test an app's documented API, but does not establish that its reply format
+is supported. Keep Automatic selected to follow focus, or select a single app in
+**App to share** to pin it. Disabled apps do not compete with enabled apps.
+
+Use **Up** and **Down** in Activity rules to change priority, then **Save rules**.
+Reordering is a draft change until saved; the first matching rule still wins.
+
+## Detection inspector and rule testing (unreleased)
+
+The settings **Detection inspector** shows the selected app, selection reason,
+activity source, detection channel, pause state and last Discord IPC write status.
+It also shows tool/panel/view names from the live API when available. This is the
+current detection decision; the Discord card may lag while updates are rate limited.
+An IPC write does not prove Discord displayed or accepted the card.
+
+Open **Test draft rules** under Activity rules, choose an app and matching mode,
+and enter selected control names, one per line. **Test rules** reports the first
+matching draft rule and activity without saving anything or updating Discord.
+**Use detected controls** copies the inspector's current live controls when present.
+
+Live mode ignores punctuation and shortcut hints, so `Crop & Rotate (R)` can match
+`cropRotate`. Windows selected-control mode uses a case-insensitive literal prefix
+and assumes the typed controls are selected/toggled. This tests user rules only;
+other activity priorities such as hints, per-app overrides, busy dialogs and idle
+can still take precedence. Live control names are excluded from support exports.

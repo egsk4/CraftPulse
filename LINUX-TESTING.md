@@ -90,3 +90,26 @@ samples, report export, duplicate-instance exit, failed-save rollback and recove
 Windows/macOS results are CI coverage; interactive testing on those desktops was
 not performed in this environment. This evidence does not imply zero remaining
 bugs or support for every ArtCraft app/compositor/version combination.
+
+### Local, unreleased issue #2 coverage
+
+The local build adds the six apps reported missing on Omarchy. The extended
+smoke fixture runs WordCraft, DeckCraft, SoundCraft, GridCraft, CADCraft and
+FigCraft as generic AppImage payloads and verifies their app-specific activity
+and HTTPS icon on a mock Discord socket. It also verifies that a closed pinned
+app does not fall back to another running app. Default ports remain zero and
+live detection is off for the six additions.
+
+Local checks passed 199 default tests, native WebKit rendering and browser
+interaction checks for pinning and draft/saved rule priority. Responsive checks
+use embedded WebKit viewports of exactly 1100, 420 and 360 CSS pixels. Published
+v0.5.0 and its historical checks above are unchanged. These changes have not been
+pushed or released, and have not been tested on a real Omarchy/Hyprland desktop.
+
+The same smoke run verifies the detection inspector's selection reason,
+hint/override activity priority, closed pinned app and sharing-disabled states.
+Draft rule tests cover live versus window matching, authentication, input limits
+and unchanged saved rules. Support exports exclude inspector control names.
+WebKit interaction checks also cover the draft rule tester and copying detected
+controls. Strict Clippy, Rust formatting and settings-page formatting passed.
+The resource measurement above predates these local changes; it was not repeated.

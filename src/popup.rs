@@ -267,6 +267,7 @@ mod tests {
             super::Popup::new(&event_loop, &server.url()).expect("native settings window");
         popup.show(None);
         let passed = Arc::new(AtomicBool::new(false));
+        let diagnostics = Arc::new(Mutex::new(String::new()));
         let started = Instant::now();
         let mut next_check = Instant::now();
         event_loop.run_return(|_, _, flow| {
@@ -276,20 +277,48 @@ mod tests {
             } else if Instant::now() >= next_check {
                 next_check = Instant::now() + Duration::from_millis(300);
                 let passed = Arc::clone(&passed);
+                let diagnostics = Arc::clone(&diagnostics);
                 popup._webview.evaluate_script_with_callback(r#"(() => {
-                    if(document.getElementById('status')?.textContent !== 'Running') return false;
-                    drawPreview({app_name:'PhotoCraft',document:'Poster',state:'Editing',buttons:[['<Portfolio>','https://example.com/me'],['Unsafe','javascript:alert(1)']]});
-                    config.rules=[{app:'PhotoCraft',element:'Crop',activity:'Cropping'}];drawRules();
-                    if(document.querySelectorAll('#rules select').length!==1 || document.querySelector('#rules input').value!=='Crop' || !document.getElementById('resources') || !document.getElementById('support-export') || !document.querySelector('.app-idle'))return false;
-                    const buttons=document.querySelectorAll('#preview-buttons a');
-                    return buttons.length===1 && buttons[0].textContent==='<Portfolio>' && buttons[0].href==='https://example.com/me' && buttons[0].rel==='noopener noreferrer' && document.getElementById('idle-after').value==='300' && document.getElementById('idle-less').getAttribute('aria-label').includes('30 seconds') && document.getElementById('idle-more').getAttribute('aria-label').includes('30 seconds') && getComputedStyle(document.getElementById('idle-after')).backgroundColor==='rgba(0, 0, 0, 0)';
-                })()"#, move |value| { if value == "true" { passed.store(true, Ordering::Relaxed); } }).unwrap();
+                    const status = document.getElementById('status')?.textContent;
+                    if (status !== 'Running') return {ready: false, status};
+                    drawPreview({
+                        app_name: 'PhotoCraft', document: 'Poster', state: 'Editing',
+                        buttons: [['<Portfolio>', 'https://example.com/me'], ['Unsafe', 'javascript:alert(1)']]
+                    });
+                    config.rules = [{app: 'PhotoCraft', element: 'Crop', activity: 'Cropping'}];
+                    drawRules();
+                    const buttons = document.querySelectorAll('#preview-buttons a');
+                    return {
+                        safeButtons: buttons.length === 1 && buttons[0].textContent === '<Portfolio>'
+                            && buttons[0].href === 'https://example.com/me'
+                            && buttons[0].rel === 'noopener noreferrer',
+                        rules: document.querySelectorAll('#rules select').length === 1
+                            && document.querySelector('#rules input').value === 'Crop',
+                        diagnostics: !!document.getElementById('resources')
+                            && !!document.getElementById('support-export'),
+                        appIdle: document.querySelector('.app-idle-mode')?.value === 'global',
+                        globalIdle: document.getElementById('idle-after').value === '300'
+                            && document.getElementById('idle-less').getAttribute('aria-label').includes('30 seconds')
+                            && document.getElementById('idle-more').getAttribute('aria-label').includes('30 seconds')
+                            && getComputedStyle(document.getElementById('idle-after')).backgroundColor === 'rgba(0, 0, 0, 0)',
+                        funControls: !!document.getElementById('card-presets')
+                            && !!document.getElementById('new-spark')
+                    };
+                })()"#, move |value| {
+                    if let Ok(serde_json::Value::Object(checks)) = serde_json::from_str(&value) {
+                        if !checks.is_empty() && checks.values().all(|check| check.as_bool() == Some(true)) {
+                            passed.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    *diagnostics.lock().unwrap() = value;
+                }).unwrap();
             }
         });
         popup.hide();
         assert!(
             passed.load(Ordering::Relaxed),
-            "settings must load, authenticate and render safe link buttons in WebKit"
+            "settings must load, authenticate and render controls in WebKit: {}",
+            diagnostics.lock().unwrap()
         );
     }
 }

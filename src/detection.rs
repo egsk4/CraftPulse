@@ -52,6 +52,8 @@ pub struct ProcessDetector {
     /// True when there has been no keyboard or mouse input for a while.
     pub idle: bool,
     pub idle_after_secs: u64,
+    pub preferred_app: Option<String>,
+    pub selection_reason: &'static str,
     pub idle_overrides: std::collections::BTreeMap<String, u64>,
     /// A streaming or recording app (OBS and similar) is running.
     pub streaming: bool,
@@ -81,6 +83,18 @@ fn process_root(
         }
     }
     pid
+}
+
+fn pinned_candidate<'a>(
+    active: &[Candidate<'a>],
+    name: &str,
+    previous_pid: Option<u32>,
+) -> Option<Candidate<'a>> {
+    active
+        .iter()
+        .filter(|candidate| candidate.1.eq_ignore_ascii_case(name))
+        .max_by_key(|candidate| (Some(candidate.2) == previous_pid, candidate.3))
+        .cloned()
 }
 
 impl ProcessDetector {
@@ -152,7 +166,10 @@ impl ProcessDetector {
             active.iter().find(|(_, _, pid, _)| *pid == root).cloned()
         });
         let artcraft_focused = focused.is_some();
-        let chosen = if artcraft_focused {
+        let focused_app_pid = focused.as_ref().map(|candidate| candidate.2);
+        let chosen = if let Some(name) = &self.preferred_app {
+            pinned_candidate(&active, name, self.current_pid)
+        } else if artcraft_focused {
             focused
         } else if cfg!(any(target_os = "windows", target_os = "linux")) {
             // Another (non-ArtCraft) window has focus: stay on the last app
@@ -162,6 +179,23 @@ impl ProcessDetector {
                 .or_else(|| newest_candidate(&active, &self.previous))
         } else {
             newest_candidate(&active, &self.previous)
+        };
+        self.selection_reason = if chosen.is_none() {
+            if self.preferred_app.is_some() {
+                "Pinned app is not running or is disabled"
+            } else {
+                "No enabled supported app detected"
+            }
+        } else if self.preferred_app.is_some() {
+            "Pinned in settings"
+        } else if chosen.as_ref().map(|candidate| candidate.2) == focused_app_pid {
+            "Focused ArtCraft window"
+        } else if cfg!(any(windows, target_os = "linux"))
+            && chosen.as_ref().map(|candidate| candidate.2) == self.current_pid
+        {
+            "Previous app is still running"
+        } else {
+            "Newest running ArtCraft app"
         };
         self.streaming = streaming;
         unknown.sort();
@@ -186,7 +220,9 @@ impl ProcessDetector {
                 self.idle,
                 self.current_pid,
                 chosen.as_ref().map(|(_, _, pid, _)| *pid),
-                artcraft_focused,
+                chosen
+                    .as_ref()
+                    .is_some_and(|candidate| Some(candidate.2) == focused_app_pid),
             );
         }
         #[cfg(not(windows))]
@@ -901,6 +937,28 @@ pub fn strip_title(title: &str, app_name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pinning_keeps_the_same_process_and_never_falls_back_to_another_app() {
+        let candidates = vec![
+            ("wordcraft".into(), "WordCraft", 10, 100),
+            ("wordcraft".into(), "WordCraft", 20, 200),
+            ("photocraft".into(), "PhotoCraft", 30, 300),
+        ];
+        assert_eq!(
+            super::pinned_candidate(&candidates, "WordCraft", Some(10))
+                .unwrap()
+                .2,
+            10
+        );
+        assert_eq!(
+            super::pinned_candidate(&candidates, "WordCraft", None)
+                .unwrap()
+                .2,
+            20
+        );
+        assert!(super::pinned_candidate(&candidates, "GridCraft", None).is_none());
+    }
+
     #[test]
     fn helper_windows_keep_the_same_logical_app() {
         let names = [

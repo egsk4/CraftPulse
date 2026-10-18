@@ -18,6 +18,7 @@ pub type SharedConfig = Arc<Mutex<Config>>;
 #[serde(default)]
 pub struct Config {
     pub enabled: bool,
+    pub preferred_app: Option<String>,
     /// Seconds without input before Idle; zero disables idle status.
     pub idle_after_secs: u64,
     pub hide_project_name: bool,
@@ -133,28 +134,27 @@ pub struct AppConfig {
 
 impl Default for Config {
     fn default() -> Self {
-        let apps = [
-            ("PhotoCraft", "photocraft"),
-            ("VectorCraft", "vectorcraft"),
-            ("FilmCraft", "filmcraft"),
-            ("LightCraft", "lightcraft"),
-            ("PdfCraft", "pdfcraft"),
-            ("EffectCraft", "effectcraft"),
-            ("DesignCraft", "designcraft"),
-        ]
-        .into_iter()
-        .map(|(name, key)| {
-            (
-                name.to_string(),
-                AppConfig {
-                    large_image_key: Some(key.to_string()),
+        let apps = crate::APP_NAMES
+            .into_iter()
+            .map(|name| {
+                let live = default_control_port(name) != 0 || name == "PdfCraft";
+                let slug = name.to_ascii_lowercase();
+                let image_key = if live {
+                    slug
+                } else {
+                    format!("https://raw.githubusercontent.com/storytold/{slug}/main/assets/app-icon/{slug}-1024.png")
+                };
+                let settings = AppConfig {
+                    large_image_key: Some(image_key),
+                    live,
                     ..AppConfig::default()
-                },
-            )
-        })
-        .collect();
+                };
+                (name.to_string(), settings)
+            })
+            .collect();
         Self {
             enabled: true,
+            preferred_app: None,
             idle_after_secs: 300,
             hide_project_name: false,
             hide_patterns: Vec::new(),
@@ -255,8 +255,17 @@ impl Config {
                 load_error: Some("Configuration could not be loaded. Sharing is off. Repair config.toml or restore its backup in settings.".into()),
                 ..Self::default() },
         };
+        config.ensure_builtin_apps();
         config.last_modified = fs::metadata(path).and_then(|m| m.modified()).ok();
         config
+    }
+
+    fn ensure_builtin_apps(&mut self) {
+        for (name, app) in Self::default().apps {
+            if !self.apps.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
+                self.apps.insert(name, app);
+            }
+        }
     }
 
     pub fn reload_if_changed(&mut self) {
@@ -267,6 +276,7 @@ impl Config {
         }
         if let Ok(text) = fs::read_to_string(&path) {
             if let Ok(mut loaded) = de::from_str::<Self>(&text) {
+                loaded.ensure_builtin_apps();
                 loaded.last_modified = modified;
                 *self = loaded;
             }
@@ -350,6 +360,11 @@ impl Config {
             default_document()
         };
         set_value(&mut document["enabled"], value(self.enabled));
+        if let Some(name) = &self.preferred_app {
+            set_value(&mut document["preferred_app"], value(name.clone()));
+        } else {
+            document.remove("preferred_app");
+        }
         set_value(
             &mut document["hide_project_name"],
             value(self.hide_project_name),
@@ -521,6 +536,36 @@ large_image_key = "effectcraft"
 enabled = true
 large_image_key = "designcraft"
 
+[apps.FigCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/figcraft/main/assets/app-icon/figcraft-1024.png"
+
+[apps.WordCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/wordcraft/main/assets/app-icon/wordcraft-1024.png"
+
+[apps.SoundCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/soundcraft/main/assets/app-icon/soundcraft-1024.png"
+
+[apps.DeckCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/deckcraft/main/assets/app-icon/deckcraft-1024.png"
+
+[apps.CADCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/cadcraft/main/assets/app-icon/cadcraft-1024.png"
+
+[apps.GridCraft]
+enabled = true
+live = false
+large_image_key = "https://raw.githubusercontent.com/storytold/gridcraft/main/assets/app-icon/gridcraft-1024.png"
+
 # Optional: show an activity while a button or tab is selected in an app.
 # Find element names by running CraftPulse with CRAFTPULSE_DUMP_UIA=1
 # (it writes uia-<app>.txt next to this file).
@@ -535,6 +580,59 @@ large_image_key = "designcraft"
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn older_configs_gain_missing_apps_without_overwriting_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[apps.photocraft]\nenabled = false\nhide_project_name = true\naction = 'Painting'\n",
+        )
+        .unwrap();
+        let config = super::Config::load_from(&path);
+        assert_eq!(config.apps.len(), crate::APP_NAMES.len());
+        let photo = config.app_config("PhotoCraft");
+        assert!(!photo.enabled);
+        assert_eq!(photo.hide_project_name, Some(true));
+        assert_eq!(photo.action.as_deref(), Some("Painting"));
+        for name in [
+            "FigCraft",
+            "WordCraft",
+            "SoundCraft",
+            "DeckCraft",
+            "CADCraft",
+            "GridCraft",
+        ] {
+            let app = &config.apps[name];
+            assert!(app.enabled);
+            assert!(!app.live);
+            assert_eq!(config.control_port(name), 0);
+            assert!(app
+                .large_image_key
+                .as_ref()
+                .unwrap()
+                .starts_with("https://raw.githubusercontent.com/storytold/"));
+        }
+    }
+
+    #[test]
+    fn pinned_app_round_trips_and_can_be_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = super::Config {
+            preferred_app: Some("WordCraft".into()),
+            ..super::Config::default()
+        };
+        config.save_to(&path).unwrap();
+        assert_eq!(
+            super::Config::load_from(&path).preferred_app.as_deref(),
+            Some("WordCraft")
+        );
+        config.preferred_app = None;
+        config.save_to(&path).unwrap();
+        assert_eq!(super::Config::load_from(&path).preferred_app, None);
+    }
+
     #[test]
     fn broken_startup_config_disables_sharing_without_replacing_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -599,7 +697,7 @@ mod tests {
     #[test]
     fn default_config_has_all_apps() {
         let config = Config::default();
-        assert_eq!(config.apps.len(), 7);
+        assert_eq!(config.apps.len(), crate::APP_NAMES.len());
         assert_eq!(config.application_id, "1558510318513033329");
     }
 
@@ -681,7 +779,7 @@ mod tests {
     #[test]
     fn default_document_parses() {
         let parsed: Config = de::from_str(&default_document().to_string()).unwrap();
-        assert_eq!(parsed.apps.len(), 7);
+        assert_eq!(parsed.apps.len(), crate::APP_NAMES.len());
     }
 
     #[test]

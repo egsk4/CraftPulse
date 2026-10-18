@@ -158,6 +158,79 @@ def main():
                 call("/api/settings", {"idle_after_secs": 0})
                 wait_for(lambda: any(card and card.get("state") == "in PhotoCraft — Editing an image"
                     and card.get("buttons", [{}])[0].get("label") == "Portfolio" for card in cards), 20)
+                original_rules = call("/api/settings")["rules"]
+                draft = [{"app": "LightCraft", "element": "Crop & Rotate (R)", "activity": "Cropping"}]
+                test = {"app": "LightCraft", "controls": ["cropRotate"], "rules": draft, "mode": "live"}
+                assert call("/api/rules/test", test) == {"matched_rule": 1, "activity": "Cropping"}
+                assert call("/api/rules/test", {**test, "mode": "window"})["matched_rule"] is None
+                assert call("/api/settings")["rules"] == original_rules, "Rule test saved its draft"
+                for bad in ({**test, "mode": "unknown"}, {**test, "controls": ["Crop"] * 33}):
+                    try:
+                        call("/api/rules/test", bad)
+                        raise AssertionError("Invalid rule test accepted")
+                    except urllib.error.HTTPError as error:
+                        assert error.code == 400
+                try:
+                    call("/api/rules/test", test, authenticated=False)
+                    raise AssertionError("Unauthenticated rule test accepted")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 401
+                settings = call("/api/settings")
+                settings["apps"]["PhotoCraft"]["action"] = "Custom editing"
+                call("/api/settings", {"apps": settings["apps"]})
+                wait_for(lambda: call("/api/diagnostics")["inspection"]["activity_source"] == "Per-app override")
+                hints = config.parent / "hints"
+                hints.mkdir(exist_ok=True)
+                hint = hints / "PhotoCraft.json"
+                hint.write_text(json.dumps({"action": "Hint activity"}))
+                wait_for(lambda: call("/api/diagnostics")["inspection"]["activity_source"] == "Integration hint")
+                assert call("/api/diagnostics")["inspection"]["activity"] == "Hint activity"
+                hint.unlink()
+                settings["apps"]["PhotoCraft"]["action"] = None
+                call("/api/settings", {"apps": settings["apps"]})
+
+                # Issue #2: generic AppImage payloads must be recognised for all six apps.
+                for name, activity in [
+                    ("WordCraft", "Writing a document"),
+                    ("DeckCraft", "Editing a presentation"),
+                    ("SoundCraft", "Editing audio"),
+                    ("GridCraft", "Editing a spreadsheet"),
+                    ("CADCraft", "Drafting"),
+                    ("FigCraft", "Designing an interface"),
+                ]:
+                    extra_app = subprocess.Popen([str(payload), "120"], env={**env,
+                        "APPDIR": str(appdir), "APPIMAGE": str(root / f"{name}-1.2-x86_64.AppImage")})
+                    try:
+                        previous_cards = len(cards)
+                        call("/api/settings", {"preferred_app": name})
+                        wait_for(lambda: any(card and card.get("state") == f"in {name} — {activity}"
+                            for card in cards[previous_cards:]), 20)
+                        shown = next(card for card in reversed(cards) if card and card.get("state") == f"in {name} — {activity}")
+                        assert shown["assets"]["large_image"] == f"https://raw.githubusercontent.com/storytold/{name.lower()}/main/assets/app-icon/{name.lower()}-1024.png"
+                        wait_for(lambda: call("/api/diagnostics")["inspection"]["app"] == name)
+                        inspection = call("/api/diagnostics")["inspection"]
+                        assert inspection["selection"] == "Pinned in settings"
+                        assert inspection["activity_source"] == "Fallback activity"
+                        assert inspection["activity"] == activity
+                        assert inspection["live_controls"] == []
+                        assert inspection["live_status"] == "Window detection selected"
+                    finally:
+                        extra_app.terminate()
+                        extra_app.wait(timeout=5)
+                    # PhotoCraft remains open, but a closed pinned app must not switch to it.
+                    wait_for(lambda: call("/api/diagnostics")["last_presence"] is None, 20)
+                    wait_for(lambda: call("/api/diagnostics")["inspection"]["app"] is None)
+                    assert call("/api/diagnostics")["inspection"]["selection"] == "Pinned app is not running or is disabled"
+                try:
+                    call("/api/settings", {"preferred_app": "UnknownCraft"})
+                    raise AssertionError("Unknown pinned app accepted")
+                except urllib.error.HTTPError as error:
+                    assert error.code == 400
+                call("/api/settings", {"preferred_app": "photocraft"})
+                assert call("/api/settings")["preferred_app"] == "PhotoCraft"
+                call("/api/settings", {"preferred_app": ""})
+                assert call("/api/settings")["preferred_app"] is None
+
                 # Stable-release regressions: new settings, safe reporting, duplicate
                 # instance protection, failed-save rollback and explicit recovery.
                 rules = [{"app": "PhotoCraft", "element": "Crop", "activity": "Cropping"}]
@@ -174,13 +247,14 @@ def main():
                     assert error.code == 400
                 call("/api/settings", {"enabled": False})
                 wait_for(lambda: call("/api/diagnostics")["last_presence"] is None)
+                wait_for(lambda: call("/api/diagnostics")["inspection"]["sharing"] == "Sharing disabled")
                 before = call("/api/stats")
                 time.sleep(2)
                 assert call("/api/stats") == before, "Disabled sharing must not add usage"
                 wait_for(lambda: call("/api/monitor")["sampled"])
                 report = call("/api/support")
                 assert report["resources"]["memory_bytes"] > 0
-                assert not any(key in report for key in ("config_path", "last_presence", "token", "rules", "logs"))
+                assert not any(key in report for key in ("config_path", "last_presence", "token", "rules", "logs", "inspection", "live_controls"))
                 duplicate = subprocess.run([str(binary)], env=env, timeout=5, capture_output=True)
                 assert duplicate.returncode == 0, duplicate.stderr
                 config.write_text("invalid = [")
@@ -197,7 +271,7 @@ def main():
                 assert "invalid = [" not in config.read_text()
                 assert process.poll() is None
                 assert not server_errors, server_errors
-                print("PASS:", "running real PhotoCraft" if fake_app is None else "simulated AppImage payload", "settings authentication,", "idle presence," if env.get("WAYLAND_DISPLAY") else "idle configuration,", "button IPC, rules, per-app idle, update channels, monitor, support export, single instance, save rollback, backup recovery and partial session-setup failure")
+                print("PASS:", "running real PhotoCraft" if fake_app is None else "simulated AppImage payload", "settings authentication,", "idle presence," if env.get("WAYLAND_DISPLAY") else "idle configuration,", "button IPC, all six issue #2 AppImages, pinned app lifecycle, detection inspector, dry-run rules, per-app idle, update channels, monitor, support export, single instance, save rollback, backup recovery and partial session-setup failure")
             except Exception:
                 print("Observed cards (mock Discord peer):", cards)
                 print("Mock server errors:", server_errors)

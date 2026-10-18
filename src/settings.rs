@@ -20,6 +20,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 #[derive(Debug, Clone, Deserialize)]
 struct SettingsUpdate {
     enabled: Option<bool>,
+    preferred_app: Option<String>,
     idle_after_secs: Option<u64>,
     hide_project_name: Option<bool>,
     hide_patterns: Option<Vec<String>>,
@@ -48,6 +49,7 @@ struct SettingsUpdate {
 #[derive(Debug, Clone, Serialize)]
 struct SettingsResponse {
     enabled: bool,
+    preferred_app: Option<String>,
     idle_after_secs: u64,
     hide_project_name: bool,
     hide_patterns: Vec<String>,
@@ -73,9 +75,31 @@ struct SettingsResponse {
     apps: std::collections::BTreeMap<String, AppConfig>,
 }
 
+#[derive(Clone, Default, Serialize)]
+pub struct DetectionInspection {
+    pub app: Option<String>,
+    pub selection: &'static str,
+    pub activity: Option<String>,
+    pub activity_source: &'static str,
+    pub live_status: &'static str,
+    pub live_controls: Vec<String>,
+    pub sharing: &'static str,
+    pub rpc: &'static str,
+}
+
+struct RequestState {
+    config: SharedConfig,
+    log: Arc<Mutex<Vec<String>>>,
+    preview: Arc<Mutex<Option<PresenceCard>>>,
+    test_request: Arc<Mutex<Option<PresenceCard>>>,
+    restart_needed: Arc<Mutex<Vec<String>>>,
+    inspection: Arc<Mutex<DetectionInspection>>,
+}
+
 pub struct SettingsServer {
     address: SocketAddr,
     token: String,
+    inspection: Arc<Mutex<DetectionInspection>>,
 }
 
 impl SettingsServer {
@@ -91,24 +115,36 @@ impl SettingsServer {
         let address = server.server_addr().to_ip().expect("local server address");
         let token = make_token();
         let thread_token = token.clone();
+        let inspection = Arc::new(Mutex::new(DetectionInspection::default()));
+        let state = RequestState {
+            config,
+            log,
+            preview,
+            test_request,
+            restart_needed,
+            inspection: Arc::clone(&inspection),
+        };
         thread::Builder::new()
             .name("craftpulse-settings".to_string())
             .spawn(move || {
                 for mut request in server.incoming_requests() {
-                    let response = handle_request(
-                        &mut request,
-                        &thread_token,
-                        &config,
-                        &log,
-                        &preview,
-                        &test_request,
-                        &restart_needed,
-                    );
+                    let response = handle_request(&mut request, &thread_token, &state);
                     let _ = request.respond(response);
                 }
             })
             .expect("could not start settings handler");
-        Self { address, token }
+        Self {
+            address,
+            token,
+            inspection,
+        }
+    }
+
+    pub fn set_inspection(&self, inspection: DetectionInspection) {
+        *self
+            .inspection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = inspection;
     }
 
     pub fn url(&self) -> String {
@@ -119,12 +155,16 @@ impl SettingsServer {
 fn handle_request(
     request: &mut tiny_http::Request,
     token: &str,
-    config: &SharedConfig,
-    log: &Arc<Mutex<Vec<String>>>,
-    preview: &Arc<Mutex<Option<PresenceCard>>>,
-    test_request: &Arc<Mutex<Option<PresenceCard>>>,
-    restart_needed: &Arc<Mutex<Vec<String>>>,
+    state: &RequestState,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
+    let RequestState {
+        config,
+        log,
+        preview,
+        test_request,
+        restart_needed,
+        inspection,
+    } = state;
     let path = request.url().split('?').next().unwrap_or("/");
     if path == "/" {
         let html = include_str!("../web/settings.html");
@@ -149,6 +189,7 @@ fn handle_request(
             let config = config.lock().unwrap_or_else(|e| e.into_inner());
             let body = serde_json::to_string(&SettingsResponse {
                 enabled: config.enabled,
+                preferred_app: config.preferred_app.clone(),
                 idle_after_secs: config.idle_after_secs,
                 hide_project_name: config.hide_project_name,
                 hide_patterns: config.hide_patterns.clone(),
@@ -221,15 +262,36 @@ fn handle_request(
                 return Response::from_string("Idle timeout must be between 0 and 86400 seconds").with_status_code(StatusCode(400));
             }
             if let Some(rules) = &update.rules {
-                if rules.len() > 100 || rules.iter().any(|rule| !crate::APP_NAMES.contains(&rule.app.as_str()) || rule.element.trim().is_empty() || rule.activity.trim().is_empty() || rule.element.chars().count() > 100 || rule.activity.chars().count() > 100) {
-                    return Response::from_string("Use up to 100 rules with a supported app and nonempty control/activity text of at most 100 characters").with_status_code(StatusCode(400));
+                let invalid = rules.iter().any(|rule| {
+                    let supported = crate::APP_NAMES.iter()
+                        .any(|name| name.eq_ignore_ascii_case(&rule.app));
+                    !supported || rule.element.trim().is_empty()
+                        || rule.activity.trim().is_empty()
+                        || rule.element.chars().count() > 100
+                        || rule.activity.chars().count() > 100
+                });
+                if rules.len() > 100 || invalid {
+                    return Response::from_string("Use up to 100 rules with a supported app and nonempty control/activity text of at most 100 characters")
+                        .with_status_code(StatusCode(400));
                 }
             }
             if update.apps.as_ref().is_some_and(|apps| apps.values().any(|app| app.idle_after_secs.is_some_and(|seconds| seconds > crate::detection::MAX_IDLE_SECS))) {
                 return Response::from_string("Per-app idle timeout must be between 0 and 86400 seconds").with_status_code(StatusCode(400));
             }
+            if update.preferred_app.as_ref().is_some_and(|name| {
+                !name.is_empty() && !crate::APP_NAMES.iter()
+                    .any(|app| app.eq_ignore_ascii_case(name))
+            }) {
+                return Response::from_string("Choose a supported app or Automatic")
+                    .with_status_code(StatusCode(400));
+            }
             let mut guard = config.lock().unwrap_or_else(|e| e.into_inner());
             let mut config = guard.clone();
+            if let Some(name) = update.preferred_app {
+                config.preferred_app = crate::APP_NAMES.iter()
+                    .find(|app| app.eq_ignore_ascii_case(&name))
+                    .map(|app| app.to_string());
+            }
             if let Some(value) = update.include_prereleases { config.include_prereleases = value; }
             if let Some(value) = update.rules { config.rules = value; }
             let launch_changed = update.launch_at_login.is_some_and(|v| v != config.launch_at_login);
@@ -341,6 +403,7 @@ fn handle_request(
                 "privacy": "No project names, paths, tokens, rules, buttons or event logs included"
             }).to_string())
         }
+        (&Method::Post, "/api/rules/test") => test_rules(request),
         (&Method::Get, "/api/diagnostics") => {
             let response = serde_json::json!({
                 "platform": std::env::consts::OS,
@@ -351,6 +414,7 @@ fn handle_request(
                 "hints_path": Config::path().parent().unwrap_or_else(|| std::path::Path::new(".")).join("hints").to_string_lossy(),
                 "discord_rpc": "See connection events below; preview is the last successfully sent card",
                 "last_presence": *preview.lock().unwrap_or_else(|e| e.into_inner()),
+                "inspection": *inspection.lock().unwrap_or_else(|e| e.into_inner()),
             });
             json_response(response.to_string())
         }
@@ -491,4 +555,58 @@ fn safe_session(name: &str) -> Option<String> {
                 .chars()
                 .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ':' | '-' | '_' | '.'))
     })
+}
+
+#[derive(Deserialize)]
+struct RuleTest {
+    app: String,
+    controls: Vec<String>,
+    rules: Vec<ActivityRule>,
+    mode: crate::rules::MatchMode,
+}
+
+fn test_rules(request: &mut tiny_http::Request) -> Response<std::io::Cursor<Vec<u8>>> {
+    let mut body = String::new();
+    if request
+        .as_reader()
+        .take(65537)
+        .read_to_string(&mut body)
+        .is_err()
+        || body.len() > 65536
+    {
+        return Response::from_string("Rule test is too large").with_status_code(StatusCode(400));
+    }
+    let test: RuleTest = match serde_json::from_str(&body) {
+        Ok(test) => test,
+        Err(_) => {
+            return Response::from_string("Invalid rule test").with_status_code(StatusCode(400))
+        }
+    };
+    if !crate::APP_NAMES
+        .iter()
+        .any(|app| app.eq_ignore_ascii_case(&test.app))
+        || test.rules.len() > 100
+        || test.controls.len() > 32
+        || test
+            .controls
+            .iter()
+            .any(|control| control.chars().count() > 200)
+        || test.rules.iter().any(|rule| {
+            rule.element.chars().count() > 100
+                || rule.activity.chars().count() > 100
+                || rule.app.len() > 40
+        })
+    {
+        return Response::from_string("Use a supported app, up to 32 controls and up to 100 rules")
+            .with_status_code(StatusCode(400));
+    }
+    let controls: Vec<&str> = test.controls.iter().map(String::as_str).collect();
+    let matched = crate::rules::matching_rule(&test.app, &controls, &test.rules, test.mode);
+    json_response(
+        serde_json::json!({
+            "matched_rule": matched.map(|index| index + 1),
+            "activity": matched.map(|index| &test.rules[index].activity),
+        })
+        .to_string(),
+    )
 }

@@ -109,3 +109,18 @@ fn fake_discord_socket_receives_presence_and_clear_commands() {
         stream.write_all(body.as_bytes()).unwrap();
     }
 }
+
+#[test]
+fn every_supported_app_has_a_specific_activity_and_preserves_custom_text() {
+    for name in crate::APP_NAMES {
+        assert_ne!(
+            crate::default_activity(name, "Creating"),
+            "Creating",
+            "{name}"
+        );
+        assert_eq!(
+            crate::default_activity(name, "Custom activity"),
+            "Custom activity"
+        );
+    }
+}

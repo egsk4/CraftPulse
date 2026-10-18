@@ -17,6 +17,7 @@ mod presence;
 mod privacy;
 mod quiet;
 mod rate_limit;
+mod rules;
 mod settings;
 mod startup;
 mod stats;
@@ -39,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const APP_NAMES: [&str; 7] = [
+const APP_NAMES: [&str; 13] = [
     "PhotoCraft",
     "VectorCraft",
     "FilmCraft",
@@ -47,6 +48,12 @@ const APP_NAMES: [&str; 7] = [
     "PdfCraft",
     "EffectCraft",
     "DesignCraft",
+    "FigCraft",
+    "WordCraft",
+    "SoundCraft",
+    "DeckCraft",
+    "CADCraft",
+    "GridCraft",
 ];
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// How often to resend an unchanged card while connected. A refreshed or
@@ -99,7 +106,7 @@ fn main() {
     {
         let _ = open::that(&settings_url);
     }
-    let _server = settings;
+    let server = settings;
 
     let quit = tray::start(settings_url);
     let mut detector = ProcessDetector::default();
@@ -162,7 +169,13 @@ fn main() {
                     .map(|seconds| (name.to_ascii_lowercase(), seconds))
             })
             .collect();
-        let detected = detector.detect(&APP_NAMES);
+        detector.preferred_app = current_config.preferred_app.clone();
+        let supported: Vec<&str> = APP_NAMES
+            .iter()
+            .copied()
+            .filter(|name| current_config.app_config(name).enabled)
+            .collect();
+        let detected = detector.detect(&supported);
         poll_interval = if current_config.enabled && detected.is_some() {
             POLL_INTERVAL
         } else {
@@ -199,10 +212,12 @@ fn main() {
         // Point the control-channel reader at the app we are showing.
         hub.set_target(detected.as_ref().and_then(|app| {
             let app_config = current_config.app_config(&app.name);
-            (app_config.enabled && app_config.live).then(|| {
+            let port = current_config.control_port(&app.name);
+            let control_available = port != 0 || app.name == "PdfCraft";
+            (app_config.enabled && app_config.live && control_available).then(|| {
                 (
                     app.name.clone(),
-                    current_config.control_port(&app.name),
+                    port,
                     current_config.control_token_file(&app.name),
                 )
             })
@@ -240,6 +255,12 @@ fn main() {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let in_use_app = detected.as_ref().map(|app| app.name.clone());
+        let mut inspection = settings::DetectionInspection {
+            app: in_use_app.clone(),
+            selection: detector.selection_reason,
+            activity_source: "No activity selected",
+            ..settings::DetectionInspection::default()
+        };
         let next_presence = detected.and_then(|app| {
             let app_config = current_config.app_config(&app.name);
             if !app_config.enabled || !current_config.enabled {
@@ -249,6 +270,21 @@ fn main() {
             // What the app itself says (control channel) beats anything guessed
             // from its windows.
             let live = hub.state_for(&app.name);
+            inspection.live_status = if !app_config.live {
+                "Window detection selected"
+            } else if current_config.control_port(&app.name) == 0 && app.name != "PdfCraft" {
+                "No control port configured"
+            } else if live.is_some() {
+                "Live API state available"
+            } else {
+                "Waiting for live API"
+            };
+            if let Some(state) = &live {
+                inspection.live_controls = [&state.tool, &state.panel, &state.view]
+                    .into_iter()
+                    .filter_map(|value| value.clone())
+                    .collect();
+            }
             let document = live
                 .as_ref()
                 .and_then(|state| state.document.clone())
@@ -256,20 +292,42 @@ fn main() {
                 .or(app.document.clone());
             let busy = live.as_ref().and_then(|state| state.busy.clone());
             let live_activity = live.as_ref().and_then(|state| state.activity(&app.name));
-            let action = hint
+            let (action, source) = hint
                 .as_ref()
-                .and_then(|h| h.action.clone())
-                .or_else(|| app_config.action.clone())
-                .or(busy)
-                .or_else(|| live.as_ref().and_then(|state| state.dialog_activity()))
-                .or_else(|| idle.then(|| "Idle".to_string()))
+                .and_then(|hint| hint.action.clone())
+                .map(|action| (action, "Integration hint"))
+                .or_else(|| {
+                    app_config
+                        .action
+                        .clone()
+                        .map(|action| (action, "Per-app override"))
+                })
+                .or_else(|| busy.map(|action| (action, "Live background work")))
+                .or_else(|| {
+                    live.as_ref()
+                        .and_then(|state| state.dialog_activity())
+                        .map(|action| (action, "Live dialog"))
+                })
+                .or_else(|| idle.then(|| ("Idle".to_string(), "Idle timeout")))
                 .or_else(|| {
                     live.as_ref()
                         .and_then(|state| state.rule_activity(&app.name, &current_config.rules))
+                        .map(|action| (action, "Live control rule"))
                 })
-                .or(live_activity)
-                .or_else(|| auto_activity.clone())
-                .unwrap_or_else(|| default_activity(&app.name, &current_config.action));
+                .or_else(|| live_activity.map(|action| (action, "Live app state")))
+                .or_else(|| {
+                    auto_activity
+                        .clone()
+                        .map(|action| (action, "Window or accessibility detection"))
+                })
+                .unwrap_or_else(|| {
+                    (
+                        default_activity(&app.name, &current_config.action),
+                        "Fallback activity",
+                    )
+                });
+            inspection.activity = Some(action.clone());
+            inspection.activity_source = source;
             let started_at = match current_config.timer_mode.as_str() {
                 "session" => {
                     let key = (app.name.clone(), app.process_id);
@@ -473,6 +531,25 @@ fn main() {
                 }
             }
         }
+        inspection.sharing = if !current_config.enabled {
+            "Sharing disabled"
+        } else if pause::is_paused() {
+            "Paused manually"
+        } else if auto_pause.is_some() {
+            "Paused automatically"
+        } else if test_override.is_some() {
+            "Test card active"
+        } else if inspection.app.is_none() {
+            "Waiting for an app"
+        } else {
+            "Ready to share"
+        };
+        inspection.rpc = if last_presence.is_some() {
+            "Last update written to Discord"
+        } else {
+            "No active card written"
+        };
+        server.set_inspection(inspection);
     }
 }
 
@@ -508,6 +585,12 @@ fn default_activity(app_name: &str, configured: &str) -> String {
         "pdfcraft" => "Working on a PDF",
         "effectcraft" => "Making motion graphics",
         "designcraft" => "Designing a layout",
+        "figcraft" => "Designing an interface",
+        "wordcraft" => "Writing a document",
+        "soundcraft" => "Editing audio",
+        "deckcraft" => "Editing a presentation",
+        "cadcraft" => "Drafting",
+        "gridcraft" => "Editing a spreadsheet",
         _ => "Creating",
     }
     .to_string()

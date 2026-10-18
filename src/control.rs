@@ -217,27 +217,12 @@ impl LiveState {
         app: &str,
         rules: &[crate::config::ActivityRule],
     ) -> Option<String> {
-        fn key(text: &str) -> String {
-            text.split('(')
-                .next()
-                .unwrap_or(text)
-                .chars()
-                .filter(|ch| ch.is_alphanumeric())
-                .flat_map(char::to_lowercase)
-                .collect()
-        }
-        rules
-            .iter()
-            .filter(|rule| rule.app.eq_ignore_ascii_case(app))
-            .find_map(|rule| {
-                let prefix = key(&rule.element);
-                (!prefix.is_empty()
-                    && [&self.tool, &self.panel, &self.view]
-                        .into_iter()
-                        .flatten()
-                        .any(|value| key(value).starts_with(&prefix)))
-                .then(|| rule.activity.clone())
-            })
+        let controls: Vec<&str> = [&self.tool, &self.panel, &self.view]
+            .into_iter()
+            .filter_map(|value| value.as_deref())
+            .collect();
+        crate::rules::matching_rule(app, &controls, rules, crate::rules::MatchMode::Live)
+            .map(|index| rules[index].activity.clone())
     }
 
     /// Activity for an open dialog ("Exporting", "Using Camera Raw").

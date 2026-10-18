@@ -268,3 +268,53 @@ latch. Regression tests cover these transitions in `src/detection.rs`.
 The detection loop backs off from 500 ms to 2 seconds when no app is detected or sharing is disabled. Settings changes and newly started apps may take up to that interval to reach the detection loop.
 
 For performance measurements, use an optimized build with isolated config, update checks disabled, no ArtCraft app or Discord and the settings window closed. Allow startup to settle, then collect at least six monitor samples five seconds apart. Report the desktop, build, sampling window and excluded helper processes; avoid universal RAM/CPU promises from one machine.
+
+## Settings UI maintenance
+
+Keep `web/settings.html` readable; do not minify the source. Format it with
+Prettier 3.6.2 using `--html-whitespace-sensitivity ignore`. No formatter package
+is required at runtime.
+
+The app-card idle selector maps Use global to null, Never to zero and Custom to
+1–86400 seconds. This preserves the existing config/API representation. Check
+both a full settings window and the narrow tray popup when changing this layout.
+Card-style buttons only populate draft template fields; Save persists them.
+Creative sparks are local UI text and must never send settings or activity requests.
+
+## App registry and pinning (unreleased)
+
+`APP_NAMES` is the detection registry and source of default app settings. Startup
+and config reload fill missing built-in app entries while preserving existing
+ones. The six additions from issue #2 default to window detection, control port
+zero and published HTTPS icons. Verify a real app's protocol before enabling or
+claiming live API support. Never invent a port to make a settings badge look ready.
+
+`preferred_app` in TOML is optional. The settings API accepts a supported app name
+or an empty string to restore Automatic. Pinning selects only that app, retains
+its current process when possible and clears presence if it closes or is disabled.
+Windows idle resumes only when the selected logical app has focus, including its
+helper-process windows. Disabled apps are excluded before selection.
+
+The extended Linux smoke test runs all six additional names as generic AppImage
+payloads, checks their default activity/icon on a mock Discord socket and checks
+that closing a pinned app cannot fall back to another running app. These fixtures
+are not real Omarchy, Hyprland, ArtCraft or Discord desktop sessions.
+
+## Detection inspection and rule previews (unreleased)
+
+The detector records selection reasons from the same branch that chooses an app.
+The main loop records activity source alongside the chosen activity, preserving
+hint/override/busy/dialog/idle/rule/fallback precedence. It publishes one owned
+`DetectionInspection` snapshot per loop via the settings server, with no additional
+polling thread. Sharing and IPC write status are distinct from detection.
+
+`RequestState` groups settings-handler shared state. The authenticated diagnostics
+endpoint includes the inspection snapshot; the allowlisted support export does not.
+Do not add live control names to support reports or include the full inspection.
+
+`rules::matching_rule` is shared by live runtime matching and the read-only
+`POST /api/rules/test` endpoint. Window mode models the case-insensitive literal
+prefix used for selected UI Automation controls; live mode normalizes punctuation
+and parenthesized shortcut labels. Draft tests do not inspect selection flags,
+include built-in rules, persist configuration or send Discord activity. Requests
+are limited to 64 KiB, 100 rules and 32 controls of up to 200 characters.
