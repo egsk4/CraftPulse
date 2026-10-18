@@ -1,6 +1,6 @@
 # Linux compatibility and testing
 
-CraftPulse 0.5.0 supports ArtCraft AppImage payloads launched directly or from
+CraftPulse 0.6.0 supports ArtCraft AppImage payloads launched directly or from
 ArtCraft Launcher. Detection groups helper processes with their application and
 preserves the focused child's window information. The launcher itself is not
 reported as a creative app.
@@ -91,7 +91,7 @@ Windows/macOS results are CI coverage; interactive testing on those desktops was
 not performed in this environment. This evidence does not imply zero remaining
 bugs or support for every ArtCraft app/compositor/version combination.
 
-### Local, unreleased issue #2 coverage
+### v0.6.0 issue #2 coverage
 
 The local build adds the six apps reported missing on Omarchy. The extended
 smoke fixture runs WordCraft, DeckCraft, SoundCraft, GridCraft, CADCraft and
@@ -103,8 +103,10 @@ live detection is off for the six additions.
 Local checks passed 199 default tests, native WebKit rendering and browser
 interaction checks for pinning and draft/saved rule priority. Responsive checks
 use embedded WebKit viewports of exactly 1100, 420 and 360 CSS pixels. Published
-v0.5.0 and its historical checks above are unchanged. These changes have not been
-pushed or released, and have not been tested on a real Omarchy/Hyprland desktop.
+v0.5.0 and its historical checks above are unchanged. The build matrix and Arch
+workflows passed for commit `2e548d1` (confirmed in GitHub Actions by the user).
+Windows/macOS coverage is automated CI, not interactive desktop testing. These
+changes have not been tested on a real Omarchy/Hyprland desktop.
 
 The same smoke run verifies the detection inspector's selection reason,
 hint/override activity priority, closed pinned app and sharing-disabled states.

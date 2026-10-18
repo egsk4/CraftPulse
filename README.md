@@ -15,7 +15,7 @@ Detection, settings and usage history stay on your machine. CraftPulse sends the
 
 ## Supported apps
 
-The local unreleased build recognises thirteen apps; published v0.5.0 recognises the original seven. **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
+CraftPulse v0.6.0 recognises thirteen apps. **PhotoCraft and LightCraft are the current focus**. The others work at a basic level (app, project name, dialogs) and will get more attention later.
 
 | App | What it is | Built-in activity |
 | --- | --- | --- |
@@ -26,16 +26,16 @@ The local unreleased build recognises thirteen apps; published v0.5.0 recognises
 | [PdfCraft](https://getartcraft.com/apps/pdfcraft) | PDF workbench | Working on a PDF |
 | [EffectCraft](https://getartcraft.com/apps/effectcraft) | Motion graphics and VFX | Making motion graphics |
 | [DesignCraft](https://getartcraft.com/apps/designcraft) | Page layout and publishing | Designing a layout |
-| FigCraft (unreleased) | Interface design | Designing an interface |
-| WordCraft (unreleased) | Word processing | Writing a document |
-| SoundCraft (unreleased) | Audio editing | Editing audio |
-| DeckCraft (unreleased) | Presentations | Editing a presentation |
-| CADCraft (unreleased) | CAD | Drafting |
-| GridCraft (unreleased) | Spreadsheets | Editing a spreadsheet |
+| FigCraft | Interface design | Designing an interface |
+| WordCraft | Word processing | Writing a document |
+| SoundCraft | Audio editing | Editing audio |
+| DeckCraft | Presentations | Editing a presentation |
+| CADCraft | CAD | Drafting |
+| GridCraft | Spreadsheets | Editing a spreadsheet |
 
 ## Features
 
-- **Automatic detection** of the Craft app you're using. If several are open, the one with focus wins. The unreleased **App to share** selector can pin one app; sharing clears when that app closes or is disabled.
+- **Automatic detection** of the Craft app you're using. If several are open, the one with focus wins. The **App to share** selector can pin one app; sharing clears when that app closes or is disabled.
 - **Project name on your card**, read from the window title and, on Windows, from the app's open document tabs.
 - **Activity detection**: dialogs like Export, Render, Save, Print, Import and Open are recognised, and you can map selected buttons or tabs to your own activity text.
 - **Idle status** after a configurable period without keyboard or mouse input (5 minutes by default; 0 disables it).
@@ -47,16 +47,16 @@ The local unreleased build recognises thirteen apps; published v0.5.0 recognises
 
 ## Install
 
-### Prebuilt (v0.5.0)
+### Prebuilt (v0.6.0)
 
-Download from [CraftPulse v0.5.0](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.5.0):
+Download from [CraftPulse v0.6.0](https://github.com/egsk4/CraftPulse/releases/tag/CraftPulse-v0.6.0):
 
 | System | Download |
 | --- | --- |
-| Windows x86-64 | `craftpulse-v0.5.0-windows-x86_64.zip` |
-| Arch Linux x86-64 | `craftpulse-v0.5.0-archlinux-x86_64.tar.gz` |
-| Other Linux x86-64 | `craftpulse-v0.5.0-linux-x86_64.tar.gz` |
-| macOS Apple Silicon | `craftpulse-v0.5.0-macos-arm64.tar.gz` |
+| Windows x86-64 | `craftpulse-v0.6.0-windows-x86_64.zip` |
+| Arch Linux x86-64 | `craftpulse-v0.6.0-archlinux-x86_64.tar.gz` |
+| Other Linux x86-64 | `craftpulse-v0.6.0-linux-x86_64.tar.gz` |
+| macOS Apple Silicon | `craftpulse-v0.6.0-macos-arm64.tar.gz` |
 
 1. Extract the archive. `SHA256SUMS.txt` contains the published checksums.
 2. Run `craftpulse.exe` on Windows or `./craftpulse` on Linux/macOS.
@@ -225,7 +225,7 @@ Both fields are optional and limited to 100 characters. A hint is only used whil
 - **Nothing shows on Discord**: the Discord desktop app must be running, **Enable Rich Presence** must be on, and the app must be enabled in per-app overrides. Check the activity log for `Discord is unavailable; retrying every few seconds`.
 - **Card shows "Working"**: no project name was found. Opening or saving a document usually fixes it.
 - **Wrong or missing activity**: add a rule in `config.toml`, or clear the per-app activity text, which overrides detection.
-- **A Craft app isn't detected**: the log lists unrecognised processes with "craft" in their name. Only the apps in the supported-apps table are matched; the six additions require the unreleased build.
+- **A Craft app isn't detected**: the log lists unrecognised processes with "craft" in their name. Only the apps in the supported-apps table are matched; the six additions require v0.6.0 or later.
 
 ## Development
 
@@ -340,11 +340,11 @@ Arch CI checks and real-AppImage testing limits.
 
 The release uses LTO, stripped symbols and one codegen unit. Detection polls twice a second while sharing an app and backs off to every two seconds when no app is detected or sharing is disabled; privacy regexes are compiled only when patterns change. Native GUI runtime libraries and WebView helpers also consume resources. Resource use varies by desktop, app count and API availability; see [verification evidence](LINUX-TESTING.md).
 
-## Local unreleased app support
+## Additional app support in v0.6.0
 
 [Issue #2](https://github.com/egsk4/CraftPulse/issues/2) reports six missing apps on
-Omarchy (Arch Linux/Hyprland). The local changes register these apps, give them
-specific default activities and add them to older configs without replacing
+Omarchy (Arch Linux/Hyprland). Version 0.6.0 registers these apps, gives them
+specific default activities and adds them to older configs without replacing
 existing app preferences. Their default icons are HTTPS images published in the
 apps' GitHub repositories, fetched by Discord; configured custom assets are kept.
 
@@ -357,7 +357,7 @@ is supported. Keep Automatic selected to follow focus, or select a single app in
 Use **Up** and **Down** in Activity rules to change priority, then **Save rules**.
 Reordering is a draft change until saved; the first matching rule still wins.
 
-## Detection inspector and rule testing (unreleased)
+## Detection inspector and rule testing
 
 The settings **Detection inspector** shows the selected app, selection reason,
 activity source, detection channel, pause state and last Discord IPC write status.

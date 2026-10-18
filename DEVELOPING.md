@@ -209,7 +209,7 @@ Live user rules can match the active tool, panel or view returned by the control
 
 ## Creating a release
 
-The current release is **v0.5.0**. GitHub Actions publishes the release and
+The current release is **v0.6.0**. GitHub Actions publishes the release and
 four executable archives only after the cross-platform and Arch checks pass.
 
 1. Update the package version in `Cargo.toml` and its root entry in `Cargo.lock`.
@@ -218,11 +218,11 @@ four executable archives only after the cross-platform and Arch checks pass.
    `cargo clippy --locked --all-targets -- -D warnings`. For Linux GUI and
    AppImage checks, run `bash scripts/check_arch.sh` on Arch as an ordinary user.
 4. Commit and push to main, then tag that exact commit. Tags follow the existing
-   naming convention, for example `CraftPulse-v0.5.0`, and must match Cargo.toml.
+   naming convention, for example `CraftPulse-v0.6.0`, and must match Cargo.toml.
 
 ```sh
-git tag -s CraftPulse-v0.5.0 -m "CraftPulse v0.5.0"
-git push origin CraftPulse-v0.5.0
+git tag -s CraftPulse-v0.6.0 -m "CraftPulse v0.6.0"
+git push origin CraftPulse-v0.6.0
 ```
 
 `.github/workflows/release.yml` calls the reusable build and Arch workflows.
@@ -281,7 +281,7 @@ both a full settings window and the narrow tray popup when changing this layout.
 Card-style buttons only populate draft template fields; Save persists them.
 Creative sparks are local UI text and must never send settings or activity requests.
 
-## App registry and pinning (unreleased)
+## App registry and pinning (v0.6.0)
 
 `APP_NAMES` is the detection registry and source of default app settings. Startup
 and config reload fill missing built-in app entries while preserving existing
@@ -300,7 +300,7 @@ payloads, checks their default activity/icon on a mock Discord socket and checks
 that closing a pinned app cannot fall back to another running app. These fixtures
 are not real Omarchy, Hyprland, ArtCraft or Discord desktop sessions.
 
-## Detection inspection and rule previews (unreleased)
+## Detection inspection and rule previews (v0.6.0)
 
 The detector records selection reasons from the same branch that chooses an app.
 The main loop records activity source alongside the chosen activity, preserving
