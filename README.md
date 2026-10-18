@@ -11,7 +11,7 @@ in PhotoCraft — Editing
 
 Detection, settings and usage history stay on your machine. CraftPulse sends the presence card to your local Discord client. The optional update checker requests public release metadata from GitHub; it does not send project names or settings.
 
-> **v0.5.0 is the first stable release.** PhotoCraft and LightCraft have the most detailed detection. Other apps and desktop environments have different capabilities; see the platform table and Linux requirements below. Please [report problems](https://github.com/egsk4/CraftPulse/issues) with your platform and a sanitized support report.
+> **v0.6.0 is the latest stable release.** PhotoCraft and LightCraft have the most detailed detection. Other apps and desktop environments have different capabilities; see the platform table and Linux requirements below. Please [report problems](https://github.com/egsk4/CraftPulse/issues) with your platform and a sanitized support report.
 
 ## Supported apps
 
